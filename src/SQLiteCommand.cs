@@ -138,12 +138,13 @@ namespace SQLite
 
 		public void Bind(int index, object val)
 		{
-			if (index < currentBindings.Length) {
-				currentBindings[index] = val;
+			if (index - 1 < currentBindings.Length) {
+				currentBindings[index - 1] = val;
 			}
 			Type type = val.GetType();
 			var writer = TableMapping.Column.WriteDelegateFor(
 				type, type.GetTypeInfo().IsEnum, false);
+			writer(statement, index, val);
 
 		}
 
