@@ -312,21 +312,12 @@ namespace SQLite
 
 			public object ReadColumn(Sqlite3StatementHandle statement, int index)
 			{
-				var colType = SQLite3.ColumnType(statement, index);
-				if(colType == SQLite3.ColType.Null) {
-					return null;
-				}
 				return ReadColumnFunc(statement, index);
 			}
 
 			public void WriteColumn(Sqlite3StatementHandle statement, int index, object value)
 			{
-				if(value == null) {
-					SQLite3.BindNull(statement, index);
-				}
-				else {
-					WriteColumnFunc(statement, index, value);
-				}
+				WriteColumnFunc(statement, index, value);
 			}
 
 			public static WriteColumnDelegate WriteDelegateFor(Type clrType, bool isEnum, bool storeAsText)
@@ -451,7 +442,7 @@ namespace SQLite
 							var value = SQLite3.ColumnString(s, i);
 							return Enum.Parse(clrType, value, true);
 						}
-						return SQLite3.ColumnInt(s, i);
+						return Enum.ToObject(clrType, SQLite3.ColumnInt(s, i));
 					};
 				}
 				throw new NotSupportedException("Don't know how to read " + clrType);
