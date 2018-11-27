@@ -296,7 +296,9 @@ namespace SQLite
 				var foreignKeyAttr = PropertyInfo.GetCustomAttribute<ForeignKeyAttribute>();
 				if(foreignKeyAttr != null) {
 					ForeignTable = tableGetter(foreignKeyAttr.TargetType);
-					ForeignColumn = ForeignTable.FindColumnWithPropertyName(foreignKeyAttr.TargetPropertyName);
+					string targetPropertyName = foreignKeyAttr.TargetPropertyName;
+					ForeignColumn = targetPropertyName == null ? ForeignTable.PK :
+						ForeignTable.FindColumnWithPropertyName(foreignKeyAttr.TargetPropertyName);
 				}
 			}
 

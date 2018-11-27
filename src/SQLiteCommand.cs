@@ -26,6 +26,7 @@ using System.Linq;
 using System.Reflection;
 using Sqlite3StatementHandle = SQLitePCL.sqlite3_stmt;
 using Sqlite3DatabaseHandle = SQLitePCL.sqlite3;
+using System.Diagnostics;
 
 #pragma warning disable 1591 // XML Doc Comments
 
@@ -44,8 +45,12 @@ namespace SQLite
 		{
 			this.conn = conn;
 			CommandText = commandText;
-			statement = SQLite3.Prepare2(conn.Handle, commandText);
-			currentBindings = new object[SQLite3.BindParameterCount(statement)];
+			try {
+				statement = SQLite3.Prepare2(conn.Handle, commandText);
+			} catch (Exception e) {
+                Debug.Assert(false, $"Couldn't prepare statement:\n{commandText}\nException:{e}");
+            }
+	currentBindings = new object[SQLite3.BindParameterCount(statement)];
 		}
 
 		public int ExecuteNonQuery()
@@ -206,7 +211,7 @@ namespace SQLite
 			//bind the values.
 			if(source != null) {
 				for(int i = 0; i < source.Length; i++) {
-					Type type = source[i].GetType();
+					Type type = source[i]?.GetType() ?? typeof(int);
 					var writer = TableMapping.Column.WriteDelegateFor(
 						type, type.GetTypeInfo().IsEnum, false);
 					writer(statement, i + 1, source[i]);
