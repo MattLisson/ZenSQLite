@@ -147,11 +147,6 @@ namespace SQLite
 		public bool Conditional;
 	}
 
-	[AttributeUsage(AttributeTargets.Enum)]
-	public class StoreAsTextAttribute : Attribute
-	{
-	}
-
 	/// <summary>
 	/// Select the collating sequence to use on a column.
 	/// "BINARY", "NOCASE", and "RTRIM" are supported.

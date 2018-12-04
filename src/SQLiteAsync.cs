@@ -33,12 +33,13 @@ namespace SQLite
 	/// <summary>
 	/// A pooled asynchronous connection to a SQLite database.
 	/// </summary>
-	public partial class SQLiteAsyncConnection
+	public class SQLiteAsyncConnection
 	{
-		SQLiteConnectionString _connectionString;
-		SQLiteConnectionWithLock _fullMutexReadConnection;
-		readonly bool isFullMutex;
-		SQLiteOpenFlags _openFlags;
+		private readonly SQLiteConnectionString _connectionString;
+		private readonly SQLiteConnectionWithLock _fullMutexReadConnection;
+		private readonly bool isFullMutex;
+		private readonly SQLiteOpenFlags _openFlags;
+		private readonly SQLiteConfig _config;
 
 		/// <summary>
 		/// Constructs a new SQLiteAsyncConnection and opens a pooled SQLite database specified by databasePath.
@@ -46,19 +47,14 @@ namespace SQLite
 		/// <param name="databasePath">
 		/// Specifies the path to the database file.
 		/// </param>
-		/// <param name="storeDateTimeAsTicks">
-		/// Specifies whether to store DateTime properties as ticks (true) or strings (false). You
-		/// absolutely do want to store them as Ticks in all new projects. The value of false is
-		/// only here for backwards compatibility. There is a *significant* speed advantage, with no
-		/// down sides, when setting storeDateTimeAsTicks = true.
-		/// If you use DateTimeOffset properties, it will be always stored as ticks regardingless
-		/// the storeDateTimeAsTicks parameter.
-		/// </param>
+		/// <param name="config">The SQLite connection config.</param>
 		/// <param name="key">
 		/// Specifies the encryption key to use on the database. Should be a string or a byte[].
 		/// </param>
-		public SQLiteAsyncConnection(string databasePath, bool storeDateTimeAsTicks = true, object key = null)
-			: this(databasePath, SQLiteOpenFlags.FullMutex | SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create, storeDateTimeAsTicks, key: key)
+		public SQLiteAsyncConnection(string databasePath, SQLiteConfig config, object key = null)
+			: this(databasePath, config,
+				  SQLiteOpenFlags.FullMutex | SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create,
+				  key: key)
 		{
 		}
 
@@ -68,6 +64,7 @@ namespace SQLite
 		/// <param name="databasePath">
 		/// Specifies the path to the database file.
 		/// </param>
+		/// <param name="config">The database configuration including table mappings.</param>
 		/// <param name="openFlags">
 		/// Flags controlling how the connection should be opened.
 		/// </param>
@@ -82,13 +79,15 @@ namespace SQLite
 		/// <param name="key">
 		/// Specifies the encryption key to use on the database. Should be a string or a byte[].
 		/// </param>
-		public SQLiteAsyncConnection(string databasePath, SQLiteOpenFlags openFlags, bool storeDateTimeAsTicks = true, object key = null)
+		public SQLiteAsyncConnection(string databasePath, SQLiteConfig config, SQLiteOpenFlags openFlags, bool storeDateTimeAsTicks = true, object key = null)
 		{
 			_openFlags = openFlags;
 			isFullMutex = _openFlags.HasFlag(SQLiteOpenFlags.FullMutex);
 			_connectionString = new SQLiteConnectionString(databasePath, storeDateTimeAsTicks, key);
+			_config = config;
 			if(isFullMutex) {
-				_fullMutexReadConnection = new SQLiteConnectionWithLock(_connectionString, openFlags) { SkipLock = true };
+				_fullMutexReadConnection =
+					new SQLiteConnectionWithLock(_connectionString, config, openFlags) { SkipLock = true };
 			}
 		}
 
@@ -122,11 +121,6 @@ namespace SQLite
 		}
 
 		/// <summary>
-		/// Whether to store DateTime properties as ticks (true) or strings (false).
-		/// </summary>
-		public bool StoreDateTimeAsTicks => GetConnection().StoreDateTimeAsTicks;
-
-		/// <summary>
 		/// Whether to writer queries to <see cref="Tracer"/> during execution.
 		/// </summary>
 		/// <value>The tracer.</value>
@@ -156,7 +150,7 @@ namespace SQLite
 		/// Returns the mappings from types to tables that the connection
 		/// currently understands.
 		/// </summary>
-		public IEnumerable<TableMapping> TableMappings => GetConnection().TableMappings;
+		public IEnumerable<TableMapping> TableMappings => GetConnection().Config.Tables;
 
 		/// <summary>
 		/// Closes all connections to all async databases.
@@ -177,7 +171,7 @@ namespace SQLite
 		/// </summary>
 		public SQLiteConnectionWithLock GetConnection()
 		{
-			return SQLiteConnectionPool.Shared.GetConnection(_connectionString, _openFlags);
+			return SQLiteConnectionPool.Shared.GetConnection(_connectionString, _config, _openFlags);
 		}
 
 		/// <summary>
@@ -230,10 +224,10 @@ namespace SQLite
 		/// <returns>
 		/// Whether the table was created or migrated.
 		/// </returns>
-		public Task<CreateTableResult> CreateTableAsync<T>(CreateFlags createFlags = CreateFlags.None)
+		public Task<CreateTableResult> CreateTableAsync<T>()
 			where T : new()
 		{
-			return WriteAsync(conn => conn.CreateTable<T>(createFlags));
+			return WriteAsync(conn => conn.CreateTable<T>());
 		}
 
 		/// <summary>
@@ -243,15 +237,14 @@ namespace SQLite
 		/// later access this schema by calling GetMapping.
 		/// </summary>
 		/// <param name="ty">Type to reflect to a database table.</param>
-		/// <param name="createFlags">Optional flags allowing implicit PK and indexes based on naming conventions.</param>  
 		/// <returns>
 		/// Whether the table was created or migrated.
 		/// </returns>
-		public Task<CreateTableResult> CreateTableAsync(Type ty, CreateFlags createFlags = CreateFlags.None)
+		public Task<CreateTableResult> CreateTableAsync(Type ty)
 		{
-			return WriteAsync(conn => conn.CreateTable(ty, createFlags));
+			return WriteAsync(conn => conn.CreateTable(ty));
 		}
-
+		
 		/// <summary>
 		/// Executes a "create table if not exists" on the database for each type. It also
 		/// creates any specified indexes on the columns of the table. It uses
@@ -261,79 +254,9 @@ namespace SQLite
 		/// <returns>
 		/// Whether the table was created or migrated for each type.
 		/// </returns>
-		public Task<CreateTablesResult> CreateTablesAsync<T, T2>(CreateFlags createFlags = CreateFlags.None)
-			where T : new()
-			where T2 : new()
+		public Task<CreateTablesResult> CreateTablesAsync(params Type[] types)
 		{
-			return CreateTablesAsync(createFlags, typeof(T), typeof(T2));
-		}
-
-		/// <summary>
-		/// Executes a "create table if not exists" on the database for each type. It also
-		/// creates any specified indexes on the columns of the table. It uses
-		/// a schema automatically generated from the specified type. You can
-		/// later access this schema by calling GetMapping.
-		/// </summary>
-		/// <returns>
-		/// Whether the table was created or migrated for each type.
-		/// </returns>
-		public Task<CreateTablesResult> CreateTablesAsync<T, T2, T3>(CreateFlags createFlags = CreateFlags.None)
-			where T : new()
-			where T2 : new()
-			where T3 : new()
-		{
-			return CreateTablesAsync(createFlags, typeof(T), typeof(T2), typeof(T3));
-		}
-
-		/// <summary>
-		/// Executes a "create table if not exists" on the database for each type. It also
-		/// creates any specified indexes on the columns of the table. It uses
-		/// a schema automatically generated from the specified type. You can
-		/// later access this schema by calling GetMapping.
-		/// </summary>
-		/// <returns>
-		/// Whether the table was created or migrated for each type.
-		/// </returns>
-		public Task<CreateTablesResult> CreateTablesAsync<T, T2, T3, T4>(CreateFlags createFlags = CreateFlags.None)
-			where T : new()
-			where T2 : new()
-			where T3 : new()
-			where T4 : new()
-		{
-			return CreateTablesAsync(createFlags, typeof(T), typeof(T2), typeof(T3), typeof(T4));
-		}
-
-		/// <summary>
-		/// Executes a "create table if not exists" on the database for each type. It also
-		/// creates any specified indexes on the columns of the table. It uses
-		/// a schema automatically generated from the specified type. You can
-		/// later access this schema by calling GetMapping.
-		/// </summary>
-		/// <returns>
-		/// Whether the table was created or migrated for each type.
-		/// </returns>
-		public Task<CreateTablesResult> CreateTablesAsync<T, T2, T3, T4, T5>(CreateFlags createFlags = CreateFlags.None)
-			where T : new()
-			where T2 : new()
-			where T3 : new()
-			where T4 : new()
-			where T5 : new()
-		{
-			return CreateTablesAsync(createFlags, typeof(T), typeof(T2), typeof(T3), typeof(T4), typeof(T5));
-		}
-
-		/// <summary>
-		/// Executes a "create table if not exists" on the database for each type. It also
-		/// creates any specified indexes on the columns of the table. It uses
-		/// a schema automatically generated from the specified type. You can
-		/// later access this schema by calling GetMapping.
-		/// </summary>
-		/// <returns>
-		/// Whether the table was created or migrated for each type.
-		/// </returns>
-		public Task<CreateTablesResult> CreateTablesAsync(CreateFlags createFlags = CreateFlags.None, params Type[] types)
-		{
-			return WriteAsync(conn => conn.CreateTables(createFlags, types));
+			return WriteAsync(conn => conn.CreateTables(types));
 		}
 
 		/// <summary>
@@ -820,32 +743,26 @@ namespace SQLite
 		/// <param name="type">
 		/// The type whose mapping to the database is returned.
 		/// </param>         
-		/// <param name="createFlags">
-		/// Optional flags allowing implicit PK and indexes based on naming conventions
-		/// </param>     
 		/// <returns>
 		/// The mapping represents the schema of the columns of the database and contains 
 		/// methods to set and get properties of objects.
 		/// </returns>
-		public Task<TableMapping> GetMappingAsync(Type type, CreateFlags createFlags = CreateFlags.None)
+		public Task<TableMapping> GetMappingAsync(Type type)
 		{
-			return ReadAsync(conn => conn.GetMapping(type, createFlags));
+			return ReadAsync(conn => conn.GetMapping(type));
 		}
 
 		/// <summary>
 		/// Retrieves the mapping that is automatically generated for the given type.
 		/// </summary>
-		/// <param name="createFlags">
-		/// Optional flags allowing implicit PK and indexes based on naming conventions
-		/// </param>     
 		/// <returns>
 		/// The mapping represents the schema of the columns of the database and contains 
 		/// methods to set and get properties of objects.
 		/// </returns>
-		public Task<TableMapping> GetMappingAsync<T>(CreateFlags createFlags = CreateFlags.None)
+		public Task<TableMapping> GetMappingAsync<T>()
 			where T : new()
 		{
-			return ReadAsync(conn => conn.GetMapping<T>(createFlags));
+			return ReadAsync(conn => conn.GetMapping<T>());
 		}
 
 		/// <summary>
@@ -1108,10 +1025,10 @@ namespace SQLite
 			public SQLiteConnectionString ConnectionString { get; private set; }
 			public SQLiteConnectionWithLock Connection { get; private set; }
 
-			public Entry(SQLiteConnectionString connectionString, SQLiteOpenFlags openFlags)
+			public Entry(SQLiteConnectionString connectionString, SQLiteConfig config, SQLiteOpenFlags openFlags)
 			{
 				ConnectionString = connectionString;
-				Connection = new SQLiteConnectionWithLock(connectionString, openFlags);
+				Connection = new SQLiteConnectionWithLock(connectionString, config, openFlags);
 			}
 
 			public void Close()
@@ -1141,14 +1058,15 @@ namespace SQLite
 			}
 		}
 
-		public SQLiteConnectionWithLock GetConnection(SQLiteConnectionString connectionString, SQLiteOpenFlags openFlags)
+		public SQLiteConnectionWithLock GetConnection(
+			SQLiteConnectionString connectionString, SQLiteConfig config, SQLiteOpenFlags openFlags)
 		{
 			lock(_entriesLock) {
 				Entry entry;
 				string key = connectionString.ConnectionString;
 
 				if(!_entries.TryGetValue(key, out entry)) {
-					entry = new Entry(connectionString, openFlags);
+					entry = new Entry(connectionString, config, openFlags);
 					_entries[key] = entry;
 				}
 
@@ -1199,9 +1117,10 @@ namespace SQLite
 		/// Initializes a new instance of the <see cref="T:SQLite.SQLiteConnectionWithLock"/> class.
 		/// </summary>
 		/// <param name="connectionString">Connection string containing the DatabasePath.</param>
+		/// <param name="config">Configuration including table definitions.</param>
 		/// <param name="openFlags">Open flags.</param>
-		public SQLiteConnectionWithLock(SQLiteConnectionString connectionString, SQLiteOpenFlags openFlags)
-			: base(connectionString.DatabasePath, openFlags, connectionString.StoreDateTimeAsTicks, key: connectionString.Key)
+		public SQLiteConnectionWithLock(SQLiteConnectionString connectionString, SQLiteConfig config, SQLiteOpenFlags openFlags)
+			: base(connectionString.DatabasePath, config, openFlags, key: connectionString.Key)
 		{
 		}
 

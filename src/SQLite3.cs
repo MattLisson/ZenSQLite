@@ -29,6 +29,9 @@ using Sqlite3 = SQLitePCL.raw;
 
 namespace SQLite
 {
+	public delegate object ReadColumnDelegate(Sqlite3StatementHandle statement, int index);
+	public delegate void WriteColumnDelegate(Sqlite3StatementHandle statement, int index, object value);
+	
 	public static class SQLite3
 	{
 		public enum Result : int

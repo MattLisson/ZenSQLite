@@ -119,6 +119,7 @@ namespace SQLite
 		}
 	}
 
+	
 	/// <summary>
 	/// An open connection to a SQLite database.
 	/// </summary>
@@ -127,9 +128,9 @@ namespace SQLite
 	{
 		private bool _open;
 		private TimeSpan _busyTimeout;
-		readonly static Dictionary<string, TableMapping> _mappings = new Dictionary<string, TableMapping>();
+        public SQLiteConfig Config { get; }
 
-		private int _transactionDepth = 0;
+        private int _transactionDepth = 0;
 		private Random _rand = new Random();
 
 		public Sqlite3DatabaseHandle Handle { get; private set; }
@@ -162,11 +163,6 @@ namespace SQLite
 		/// <value>The tracer.</value>
 		public Action<string> Tracer { get; set; }
 
-		/// <summary>
-		/// Whether to store DateTime properties as ticks (true) or strings (false).
-		/// </summary>
-		public bool StoreDateTimeAsTicks { get; }
-
 #if USE_SQLITEPCL_RAW && !NO_SQLITEPCL_RAW_BATTERIES
 		static SQLiteConnection()
 		{
@@ -180,19 +176,12 @@ namespace SQLite
 		/// <param name="databasePath">
 		/// Specifies the path to the database file.
 		/// </param>
-		/// <param name="storeDateTimeAsTicks">
-		/// Specifies whether to store DateTime properties as ticks (true) or strings (false). You
-		/// absolutely do want to store them as Ticks in all new projects. The value of false is
-		/// only here for backwards compatibility. There is a *significant* speed advantage, with no
-		/// down sides, when setting storeDateTimeAsTicks = true.
-		/// If you use DateTimeOffset properties, it will be always stored as ticks regardingless
-		/// the storeDateTimeAsTicks parameter.
-		/// </param>
+		/// <param name="config">The database configuration.</param>
 		/// <param name="key">
 		/// Specifies the encryption key to use on the database. Should be a string or a byte[].
 		/// </param>
-		public SQLiteConnection(string databasePath, bool storeDateTimeAsTicks = true, object key = null)
-			: this(databasePath, SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create, storeDateTimeAsTicks, key: key)
+		public SQLiteConnection(string databasePath, SQLiteConfig config, object key = null)
+			: this(databasePath, config, SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create, key: key)
 		{
 		}
 
@@ -202,22 +191,17 @@ namespace SQLite
 		/// <param name="databasePath">
 		/// Specifies the path to the database file.
 		/// </param>
+		/// <param name="config">The database configuration</param>
 		/// <param name="openFlags">
 		/// Flags controlling how the connection should be opened.
-		/// </param>
-		/// <param name="storeDateTimeAsTicks">
-		/// Specifies whether to store DateTime properties as ticks (true) or strings (false). You
-		/// absolutely do want to store them as Ticks in all new projects. The value of false is
-		/// only here for backwards compatibility. There is a *significant* speed advantage, with no
-		/// down sides, when setting storeDateTimeAsTicks = true.
-		/// If you use DateTimeOffset properties, it will be always stored as ticks regardingless
-		/// the storeDateTimeAsTicks parameter.
 		/// </param>
 		/// <param name="key">
 		/// Specifies the encryption key to use on the database. Should be a string or a byte[].
 		/// </param>
-		public SQLiteConnection(string databasePath, SQLiteOpenFlags openFlags, bool storeDateTimeAsTicks = true, object key = null)
+		public SQLiteConnection(string databasePath, SQLiteConfig config, SQLiteOpenFlags openFlags, object key = null)
 		{
+			config.AddTable<ColumnInfo>();
+			this.Config = config;
 			if(databasePath == null) {
 				throw new ArgumentException("Must be specified", nameof(databasePath));
 			}
@@ -247,8 +231,6 @@ namespace SQLite
 				throw SQLiteException.New(r, String.Format("Could not open database file: {0} ({1})", DatabasePath, r));
 			}
 			_open = true;
-
-			StoreDateTimeAsTicks = storeDateTimeAsTicks;
 
 			BusyTimeout = TimeSpan.FromSeconds(0.1);
 			Tracer = line => Debug.WriteLine(line);
@@ -359,68 +341,30 @@ namespace SQLite
 		}
 
 		/// <summary>
-		/// Returns the mappings from types to tables that the connection
-		/// currently understands.
-		/// </summary>
-		public IEnumerable<TableMapping> TableMappings {
-			get {
-				lock(_mappings) {
-					return new List<TableMapping>(_mappings.Values);
-				}
-			}
-		}
-
-		/// <summary>
-		/// Retrieves the mapping that is automatically generated for the given type.
+		/// Retrieves the mapping that for the given type.
 		/// </summary>
 		/// <param name="type">
 		/// The type whose mapping to the database is returned.
 		/// </param>
-		/// <param name="createFlags">
-		/// Optional flags allowing implicit PK and indexes based on naming conventions
-		/// </param>
 		/// <returns>
 		/// The mapping represents the schema of the columns of the database and contains
 		/// methods to set and get properties of objects.
 		/// </returns>
-		public TableMapping GetMapping(Type type, CreateFlags createFlags = CreateFlags.None)
+		public TableMapping GetMapping(Type type)
 		{
-			TableMapping map;
-			var key = type.FullName;
-			bool newlyCreated = false;
-			lock(_mappings) {
-				if(_mappings.TryGetValue(key, out map)) {
-					if(createFlags != CreateFlags.None && createFlags != map.CreateFlags) {
-						map = new TableMapping(type, createFlags);
-						_mappings[key] = map;
-						newlyCreated = true;
-					}
-				}
-				else {
-					map = new TableMapping(type, createFlags);
-					_mappings[key] = map;
-					newlyCreated = true;
-				}
-			}
-			if (newlyCreated) {
-				map.WireForeignKeys((t) => GetMapping(t));
-			}
-			return map;
+			return Config.GetTable(type);
 		}
 
 		/// <summary>
 		/// Retrieves the mapping that is automatically generated for the given type.
 		/// </summary>
-		/// <param name="createFlags">
-		/// Optional flags allowing implicit PK and indexes based on naming conventions
-		/// </param>
 		/// <returns>
 		/// The mapping represents the schema of the columns of the database and contains
 		/// methods to set and get properties of objects.
 		/// </returns>
-		public TableMapping GetMapping<T>(CreateFlags createFlags = CreateFlags.None)
+		public TableMapping GetMapping<T>()
 		{
-			return GetMapping(typeof(T), createFlags);
+			return Config.GetTable(typeof(T));
 		}
 
 		private struct IndexedColumn
@@ -458,6 +402,19 @@ namespace SQLite
 		}
 
 		/// <summary>
+		/// Creates all of the tables known in the config provided in the constructor.
+		/// </summary>
+		/// <returns></returns>
+		public CreateTablesResult CreateAllTables()
+		{
+			CreateTablesResult result = new CreateTablesResult();
+			foreach (TableMapping table in Config.Tables) {
+				result.Results[table.MappedType] = CreateTable(table.MappedType);
+			}
+			return result;
+		}
+
+		/// <summary>
 		/// Executes a "create table if not exists" on the database. It also
 		/// creates any specified indexes on the columns of the table. It uses
 		/// a schema automatically generated from the specified type. You can
@@ -466,9 +423,9 @@ namespace SQLite
 		/// <returns>
 		/// Whether the table was created or migrated.
 		/// </returns>
-		public CreateTableResult CreateTable<T>(CreateFlags createFlags = CreateFlags.None)
+		public CreateTableResult CreateTable<T>()
 		{
-			return CreateTable(typeof(T), createFlags);
+			return CreateTable(typeof(T));
 		}
 
 		/// <summary>
@@ -478,13 +435,12 @@ namespace SQLite
 		/// later access this schema by calling GetMapping.
 		/// </summary>
 		/// <param name="ty">Type to reflect to a database table.</param>
-		/// <param name="createFlags">Optional flags allowing implicit PK and indexes based on naming conventions.</param>
 		/// <returns>
 		/// Whether the table was created or migrated.
 		/// </returns>
-		public CreateTableResult CreateTable(Type ty, CreateFlags createFlags = CreateFlags.None)
+		public CreateTableResult CreateTable(Type ty)
 		{
-			var map = GetMapping(ty, createFlags);
+			var map = GetMapping(ty);
 
 			// Present a nice error if no columns specified
 			if(map.Columns.Length == 0) {
@@ -494,13 +450,13 @@ namespace SQLite
 			// Check if the table exists
 			var result = CreateTableResult.Created;
 			var existingCols = GetTableInfo(map.TableName);
-
+			CreateFlags createFlags = Config.CreateFlags;
 			// Create or migrate it
 			if(existingCols.Count == 0) {
 
 				// Facilitate virtual tables a.k.a. full-text search.
-				bool fts3 = (createFlags & CreateFlags.FullTextSearch3) != 0;
-				bool fts4 = (createFlags & CreateFlags.FullTextSearch4) != 0;
+				bool fts3 = createFlags.HasFlag(CreateFlags.FullTextSearch3);
+				bool fts4 = createFlags.HasFlag(CreateFlags.FullTextSearch4);
 				bool fts = fts3 || fts4;
 				var @virtual = fts ? "virtual " : string.Empty;
 				var @using = fts3 ? "using fts3 " : fts4 ? "using fts4 " : string.Empty;
@@ -566,81 +522,11 @@ namespace SQLite
 		/// <returns>
 		/// Whether the table was created or migrated for each type.
 		/// </returns>
-		public CreateTablesResult CreateTables<T, T2>(CreateFlags createFlags = CreateFlags.None)
-			where T : new()
-			where T2 : new()
-		{
-			return CreateTables(createFlags, typeof(T), typeof(T2));
-		}
-
-		/// <summary>
-		/// Executes a "create table if not exists" on the database for each type. It also
-		/// creates any specified indexes on the columns of the table. It uses
-		/// a schema automatically generated from the specified type. You can
-		/// later access this schema by calling GetMapping.
-		/// </summary>
-		/// <returns>
-		/// Whether the table was created or migrated for each type.
-		/// </returns>
-		public CreateTablesResult CreateTables<T, T2, T3>(CreateFlags createFlags = CreateFlags.None)
-			where T : new()
-			where T2 : new()
-			where T3 : new()
-		{
-			return CreateTables(createFlags, typeof(T), typeof(T2), typeof(T3));
-		}
-
-		/// <summary>
-		/// Executes a "create table if not exists" on the database for each type. It also
-		/// creates any specified indexes on the columns of the table. It uses
-		/// a schema automatically generated from the specified type. You can
-		/// later access this schema by calling GetMapping.
-		/// </summary>
-		/// <returns>
-		/// Whether the table was created or migrated for each type.
-		/// </returns>
-		public CreateTablesResult CreateTables<T, T2, T3, T4>(CreateFlags createFlags = CreateFlags.None)
-			where T : new()
-			where T2 : new()
-			where T3 : new()
-			where T4 : new()
-		{
-			return CreateTables(createFlags, typeof(T), typeof(T2), typeof(T3), typeof(T4));
-		}
-
-		/// <summary>
-		/// Executes a "create table if not exists" on the database for each type. It also
-		/// creates any specified indexes on the columns of the table. It uses
-		/// a schema automatically generated from the specified type. You can
-		/// later access this schema by calling GetMapping.
-		/// </summary>
-		/// <returns>
-		/// Whether the table was created or migrated for each type.
-		/// </returns>
-		public CreateTablesResult CreateTables<T, T2, T3, T4, T5>(CreateFlags createFlags = CreateFlags.None)
-			where T : new()
-			where T2 : new()
-			where T3 : new()
-			where T4 : new()
-			where T5 : new()
-		{
-			return CreateTables(createFlags, typeof(T), typeof(T2), typeof(T3), typeof(T4), typeof(T5));
-		}
-
-		/// <summary>
-		/// Executes a "create table if not exists" on the database for each type. It also
-		/// creates any specified indexes on the columns of the table. It uses
-		/// a schema automatically generated from the specified type. You can
-		/// later access this schema by calling GetMapping.
-		/// </summary>
-		/// <returns>
-		/// Whether the table was created or migrated for each type.
-		/// </returns>
-		public CreateTablesResult CreateTables(CreateFlags createFlags = CreateFlags.None, params Type[] types)
+		public CreateTablesResult CreateTables(params Type[] types)
 		{
 			var result = new CreateTablesResult();
 			foreach(Type type in types) {
-				var aResult = CreateTable(type, createFlags);
+				var aResult = CreateTable(type);
 				result.Results[type] = aResult;
 			}
 			return result;
@@ -775,7 +661,7 @@ namespace SQLite
 			}
 
 			foreach(var p in toBeAdded) {
-				var addCol = $@"alter table ""{map.TableName}"" add column ""{p.SqlDecl}""";
+				var addCol = $@"alter table ""{map.TableName}"" add column {p.SqlDecl}";
 				Execute(addCol);
 			}
 		}
@@ -1675,7 +1561,7 @@ namespace SQLite
 
 			}
 
-			var insertCommand = new SQLiteInsertStatement(Handle, insertSql);
+			var insertCommand = new SQLiteInsertStatement(this, insertSql);
 			return insertCommand;
 		}
 
@@ -1754,7 +1640,7 @@ namespace SQLite
 					throw NotNullConstraintViolationException.New(ex, map, obj);
 				}
 
-				throw ex;
+				throw;
 			}
 
 			if(rowsAffected > 0) {

@@ -123,7 +123,7 @@ namespace SQLite
 			var r = SQLite3.Step(statement);
 			if(r == SQLite3.Result.Row) {
 				Type t = typeof(T);
-				var readFunc = TableMapping.Column.ReadDelegateFor(t, t.GetTypeInfo().IsEnum);
+				var readFunc = conn.Config.ColumnReader(t);
 				val = (T)readFunc(statement, 0);
 			}
 			else if(r == SQLite3.Result.Done) {
@@ -147,8 +147,7 @@ namespace SQLite
 				currentBindings[index - 1] = val;
 			}
 			Type type = val.GetType();
-			var writer = TableMapping.Column.WriteDelegateFor(
-				type, type.GetTypeInfo().IsEnum, false);
+			var writer = conn.Config.ColumnWriter(type);
 			writer(statement, index, val);
 
 		}
@@ -193,15 +192,15 @@ namespace SQLite
 	/// </summary>
 	class SQLiteInsertStatement : IDisposable
 	{
-		private readonly Sqlite3DatabaseHandle connection;
+		private readonly SQLiteConnection connection;
 		private readonly string commandText;
 		private readonly Sqlite3StatementHandle statement;
 
-		public SQLiteInsertStatement(Sqlite3DatabaseHandle conn, string commandText)
+		public SQLiteInsertStatement(SQLiteConnection conn, string commandText)
 		{
 			connection = conn;
 			this.commandText = commandText;
-			statement = SQLite3.Prepare2(conn, commandText);
+			statement = SQLite3.Prepare2(conn.Handle, commandText);
 		}
 
 		public int Execute(object[] source)
@@ -212,26 +211,25 @@ namespace SQLite
 			if(source != null) {
 				for(int i = 0; i < source.Length; i++) {
 					Type type = source[i]?.GetType() ?? typeof(int);
-					var writer = TableMapping.Column.WriteDelegateFor(
-						type, type.GetTypeInfo().IsEnum, false);
+					var writer = connection.Config.ColumnWriter(type);
 					writer(statement, i + 1, source[i]);
 				}
 			}
 			r = SQLite3.Step(statement);
 
 			if(r == SQLite3.Result.Done) {
-				int rowsAffected = SQLite3.Changes(connection);
+				int rowsAffected = SQLite3.Changes(connection.Handle);
 				SQLite3.Reset(statement);
 				return rowsAffected;
 			}
 			else if(r == SQLite3.Result.Error) {
-				string msg = SQLite3.GetErrmsg(connection);
+				string msg = SQLite3.GetErrmsg(connection.Handle);
 				SQLite3.Reset(statement);
 				throw SQLiteException.New(r, msg);
 			}
-			else if(r == SQLite3.Result.Constraint && SQLite3.ExtendedErrCode(connection) == SQLite3.ExtendedResult.ConstraintNotNull) {
+			else if(r == SQLite3.Result.Constraint && SQLite3.ExtendedErrCode(connection.Handle) == SQLite3.ExtendedResult.ConstraintNotNull) {
 				SQLite3.Reset(statement);
-				throw NotNullConstraintViolationException.New(r, SQLite3.GetErrmsg(connection));
+				throw NotNullConstraintViolationException.New(r, SQLite3.GetErrmsg(connection.Handle));
 			}
 			else {
 				SQLite3.Reset(statement);

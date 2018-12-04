@@ -59,8 +59,9 @@ namespace SQLite
 		public ManyToManyRelationship[] ManyToManys { get; }
 
 
-		public TableMapping(Type type, CreateFlags createFlags = CreateFlags.None)
+		public TableMapping(Type type, SQLiteConfig config)
 		{
+			CreateFlags createFlags = config.CreateFlags;
 			MappedType = type;
 			CreateFlags = createFlags;
 
@@ -85,7 +86,7 @@ namespace SQLite
 						!propNames.Contains(p.Name) &&
 						p.CanRead && p.CanWrite &&
 						(p.GetMethod != null) && (p.SetMethod != null) &&
-						(p.GetMethod.IsPublic && p.SetMethod.IsPublic) &&
+						p.GetMethod.IsPublic &&
 						(!p.GetMethod.IsStatic) && (!p.SetMethod.IsStatic)
 					select p).ToList();
 				foreach(var p in newProps) {
@@ -100,7 +101,7 @@ namespace SQLite
 			foreach(var p in props) {
 				var isColumn = !p.IsDefined(typeof(IgnoreAttribute), true);
 				if(isColumn) {
-					cols.Add(new Column(p, createFlags));
+					cols.Add(new Column(p, config));
 				}
 				else if(p.IsDefined(typeof(ManyToManyAttribute), true)) {
 					manyToManys.Add(new ManyToManyRelationship(p));
@@ -129,13 +130,13 @@ namespace SQLite
 			InsertOrReplaceColumns = Columns.ToArray();
 		}
 
-		public void WireForeignKeys(Func<Type, TableMapping> tableMap)
+		public void WireForeignKeys(SQLiteConfig config)
 		{
 			foreach(Column col in Columns) {
-				col.WireForeignKeys(tableMap);
+				col.WireForeignKeys(config);
 			}
 			foreach(ManyToManyRelationship manyToMany in ManyToManys) {
-				manyToMany.WireForeignKeys(tableMap);
+				manyToMany.WireForeignKeys(config);
 			}
 		}
 
@@ -152,7 +153,7 @@ namespace SQLite
 
 		public Column FindColumn(string columnName)
 		{
-			var exact = Columns.FirstOrDefault(c => c.Name.ToLower() == columnName.ToLower());
+			var exact = Columns.FirstOrDefault(c => string.Equals(c.Name, columnName, StringComparison.OrdinalIgnoreCase));
 			return exact;
 		}
 
@@ -165,44 +166,7 @@ namespace SQLite
 			public string PropertyName { get { return PropertyInfo.Name; } }
 
 			public Type ClrType { get; }
-			public bool IsEnum { get; }
-			public string SqlType {
-				get {
-					var clrType = ClrType;
-					if(clrType == typeof(Boolean) || clrType == typeof(Byte) || clrType == typeof(UInt16) || clrType == typeof(SByte) || clrType == typeof(Int16) || clrType == typeof(Int32) || clrType == typeof(UInt32) || clrType == typeof(Int64)) {
-						return "integer";
-					}
-					else if(clrType == typeof(Single) || clrType == typeof(Double) || clrType == typeof(Decimal)) {
-						return "float";
-					}
-					else if(clrType == typeof(String) || clrType == typeof(StringBuilder) || clrType == typeof(Uri) || clrType == typeof(UriBuilder)) {
-						int? len = MaxStringLength;
-
-						if(len.HasValue) {
-							return "varchar(" + len.Value + ")";
-						}
-
-						return "varchar";
-					}
-					else if(clrType.GetTypeInfo().IsEnum) {
-						if(StoreAsText) {
-							return "varchar";
-						}
-						else {
-							return "integer";
-						}
-					}
-					else if(clrType == typeof(byte[])) {
-						return "blob";
-					}
-					else if(clrType == typeof(Guid)) {
-						return "varchar(36)";
-					}
-					else {
-						throw new NotSupportedException("Don't know about " + clrType);
-					}
-				}
-			}
+			public string SqlType { get; }
 
 			public TableMapping ForeignTable { get; private set; }
 			public Column ForeignColumn { get; private set; }
@@ -215,13 +179,10 @@ namespace SQLite
 			public bool IsAutoInc { get; }
 			public bool IsAutoGuid { get; }
 			public bool IsNullable { get; }
-			public bool StoreAsText { get; }
 
 			public int? MaxStringLength { get; }
 			public string Collation { get; }
 
-			public delegate object ReadColumnDelegate(Sqlite3StatementHandle statement, int index);
-			public delegate void WriteColumnDelegate(Sqlite3StatementHandle statement, int index, object value);
 			private ReadColumnDelegate ReadColumnFunc { get; }
 			private WriteColumnDelegate WriteColumnFunc { get; }
 			private Func<object, object> GetFunc { get; }
@@ -254,17 +215,16 @@ namespace SQLite
 				}
 			}
 
-			public Column(PropertyInfo prop, CreateFlags createFlags = CreateFlags.None)
+			public Column(PropertyInfo prop, SQLiteConfig config)
 			{
 				var colAttr = prop.GetCustomAttribute<ColumnAttribute>();
-
+				CreateFlags createFlags = config.CreateFlags;
 				PropertyInfo = prop;
 				GetFunc = prop.GetGetterDelegate();
 				SetFunc = prop.GetSetterDelegate();
 				Name = colAttr?.Name ?? prop.Name;
 				//If this type is Nullable<T> then Nullable.GetUnderlyingType returns the T, otherwise it returns null, so get the actual type instead
 				ClrType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
-				IsEnum = ClrType.GetTypeInfo().IsEnum;
 
 				Collation = Orm.Collation(prop);
 				IsPK = Orm.IsPK(prop) ||
@@ -285,17 +245,17 @@ namespace SQLite
 				}
 				IsNullable = !(IsPK || Orm.IsMarkedNotNull(prop));
 				MaxStringLength = Orm.MaxStringLength(prop);
+				SqlType = config.SqlTypeFor(ClrType, MaxStringLength);
 
-				StoreAsText = prop.IsDefined(typeof(StoreAsTextAttribute));
-				WriteColumnFunc = WriteDelegateFor(ClrType, IsEnum, StoreAsText);
-				ReadColumnFunc = ReadDelegateFor(ClrType, IsEnum);
+				WriteColumnFunc = config.ColumnWriter(ClrType);
+				ReadColumnFunc = config.ColumnReader(ClrType);
 			}
 
-			public void WireForeignKeys(Func<Type, TableMapping> tableGetter)
+			public void WireForeignKeys(SQLiteConfig config)
 			{
 				var foreignKeyAttr = PropertyInfo.GetCustomAttribute<ForeignKeyAttribute>();
 				if(foreignKeyAttr != null) {
-					ForeignTable = tableGetter(foreignKeyAttr.TargetType);
+					ForeignTable = config.GetTable(foreignKeyAttr.TargetType);
 					string targetPropertyName = foreignKeyAttr.TargetPropertyName;
 					ForeignColumn = targetPropertyName == null ? ForeignTable.PK :
 						ForeignTable.FindColumnWithPropertyName(foreignKeyAttr.TargetPropertyName);
@@ -321,134 +281,6 @@ namespace SQLite
 			{
 				WriteColumnFunc(statement, index, value);
 			}
-
-			public static WriteColumnDelegate WriteDelegateFor(Type clrType, bool isEnum, bool storeAsText)
-			{
-				WriteColumnDelegate innerDelegate = NonNullWriteDelegateFor(clrType, isEnum, storeAsText);
-				return (s, i, v) => {
-					if(v == null) {
-						SQLite3.BindNull(s, i);
-					}
-					else {
-						innerDelegate(s, i, v);
-					}
-				};
-			}
-
-			private static WriteColumnDelegate NonNullWriteDelegateFor(Type clrType, bool isEnum, bool storeAsText)
-			{
-				if(clrType == typeof(int)) {
-					return (s, i, v) => SQLite3.BindInt(s, i, (int)v);
-				}
-				if(clrType == typeof(string)) {
-					return (s, i, v) => SQLite3.BindText(s, i, (string)v, -1);
-				}
-				if(clrType == typeof(Byte) || clrType == typeof(UInt16)
-					|| clrType == typeof(SByte) || clrType == typeof(Int16)) {
-					return (s, i, v) => SQLite3.BindInt(s, i, Convert.ToInt32(v));
-				}
-				if(clrType == typeof(Boolean)) {
-					return (s, i, v) => SQLite3.BindInt(s, i, (bool)v ? 1 : 0);
-				}
-				if(clrType == typeof(UInt32) || clrType == typeof(Int64)) {
-					return (s, i, v) => SQLite3.BindInt64(s, i, Convert.ToInt64(v));
-				}
-				if(clrType == typeof(Single) || clrType == typeof(Double)
-					|| clrType == typeof(Decimal)) {
-					return (s, i, v) => SQLite3.BindDouble(s, i, Convert.ToDouble(v));
-				}
-				if(clrType == typeof(byte[])) {
-					return (s, i, v) => SQLite3.BindBlob(s, i, (byte[])v, ((byte[])v).Length);
-				}
-				if(clrType == typeof(Guid)) {
-					return (s, i, v) => SQLite3.BindText(s, i, ((Guid)v).ToString(), 72);
-				}
-				if(isEnum) {
-					return (s, i, v) => {
-						var enumIntValue = Convert.ToInt32(v);
-						if(storeAsText) {
-							SQLite3.BindText(s, i, Enum.GetName(clrType, v), -1);
-						}
-						else {
-							SQLite3.BindInt(s, i, enumIntValue);
-						}
-					};
-				}
-				throw new NotSupportedException("Cannot store type: " + clrType);
-			}
-
-			public static ReadColumnDelegate ReadDelegateFor(Type clrType, bool isEnum)
-			{
-				ReadColumnDelegate innerDelegate = NonNullReadDelegateFor(clrType, isEnum);
-				return (s, i) => {
-					var colType = SQLite3.ColumnType(s, i);
-					if(colType == SQLite3.ColType.Null) {
-						return null;
-					}
-					else {
-						return innerDelegate(s, i);
-					}
-				};
-			}
-			public static ReadColumnDelegate NonNullReadDelegateFor(Type clrType, bool isEnum)
-			{
-				if(clrType == typeof(String)) {
-					return (s, i) => SQLite3.ColumnString(s, i);
-				}
-				if(clrType == typeof(Int32)) {
-					return (s, i) => SQLite3.ColumnInt(s, i);
-				}
-				if(clrType == typeof(Boolean)) {
-					return (s, i) => SQLite3.ColumnInt(s, i) == 1;
-				}
-				if(clrType == typeof(double)) {
-					return (s, i) => SQLite3.ColumnDouble(s, i);
-				}
-				if(clrType == typeof(float)) {
-					return (s, i) => (float)SQLite3.ColumnDouble(s, i);
-				}
-				if(clrType == typeof(Int64)) {
-					return (s, i) => SQLite3.ColumnInt64(s, i);
-				}
-				if(clrType == typeof(UInt32)) {
-					return (s, i) => (uint)SQLite3.ColumnInt64(s, i);
-				}
-				if(clrType == typeof(decimal)) {
-					return (s, i) => (decimal)SQLite3.ColumnDouble(s, i);
-				}
-				if(clrType == typeof(Byte)) {
-					return (s, i) => (byte)SQLite3.ColumnInt(s, i);
-				}
-				if(clrType == typeof(UInt16)) {
-					return (s, i) => (ushort)SQLite3.ColumnInt(s, i);
-				}
-				if(clrType == typeof(Int16)) {
-					return (s, i) => (short)SQLite3.ColumnInt(s, i);
-				}
-				if(clrType == typeof(sbyte)) {
-					return (s, i) => (sbyte)SQLite3.ColumnInt(s, i);
-				}
-				if(clrType == typeof(byte[])) {
-					return (s, i) => SQLite3.ColumnByteArray(s, i);
-				}
-				if(clrType == typeof(Guid)) {
-					return (s, i) => {
-						var text = SQLite3.ColumnString(s, i);
-						return new Guid(text);
-					};
-				}
-				if(isEnum) {
-					return (s, i) => {
-						var colType = SQLite3.ColumnType(s, i);
-						if(colType == SQLite3.ColType.Text) {
-							var value = SQLite3.ColumnString(s, i);
-							return Enum.Parse(clrType, value, true);
-						}
-						return Enum.ToObject(clrType, SQLite3.ColumnInt(s, i));
-					};
-				}
-				throw new NotSupportedException("Don't know how to read " + clrType);
-			}
 		}
 	}
 
@@ -472,10 +304,10 @@ namespace SQLite
 			PropertyInfo = prop;
 		}
 
-		public void WireForeignKeys(Func<Type, TableMapping> tableMap)
+		public void WireForeignKeys(SQLiteConfig config)
 		{
 			var attribute = PropertyInfo.GetCustomAttribute<ManyToManyAttribute>();
-			Table = tableMap(attribute.RelationshipType);
+			Table = config.GetTable(attribute.RelationshipType);
 			ThisKeyColumn = Table.FindColumnWithPropertyName(attribute.ThisKeyProperty);
 			OtherKeyColumn = Table.FindColumnWithPropertyName(attribute.OtherKeyProperty);
 		}
