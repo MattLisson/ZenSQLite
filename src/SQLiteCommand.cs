@@ -146,7 +146,7 @@ namespace SQLite
 			if (index - 1 < currentBindings.Length) {
 				currentBindings[index - 1] = val;
 			}
-			Type type = val.GetType();
+			Type type = val?.GetType() ?? typeof(int);
 			var writer = conn.Config.ColumnWriter(type);
 			writer(statement, index, val);
 
