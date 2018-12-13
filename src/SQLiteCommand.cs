@@ -36,7 +36,7 @@ namespace SQLite
 	{
 		private readonly SQLiteConnection conn;
 		private readonly Sqlite3StatementHandle statement;
-		private readonly object[] currentBindings;
+		private readonly object?[] currentBindings;
 
 		public string CommandText { get; }
 
@@ -49,8 +49,9 @@ namespace SQLite
 				statement = SQLite3.Prepare2(conn.Handle, commandText);
 			} catch (Exception e) {
                 Debug.Assert(false, $"Couldn't prepare statement:\n{commandText}\nException:{e}");
+				throw e;
             }
-	currentBindings = new object[SQLite3.BindParameterCount(statement)];
+			currentBindings = new object[SQLite3.BindParameterCount(statement)];
 		}
 
 		public int ExecuteNonQuery()
@@ -71,7 +72,7 @@ namespace SQLite
 				}
 			}
 
-			throw SQLiteException.New(r, r.ToString());
+			throw SQLiteException.New(r, SQLite3.GetErrmsg(conn.Handle));
 		}
 
 		public IEnumerable<T> ExecuteDeferredQuery<T>()
@@ -118,7 +119,8 @@ namespace SQLite
 
 		public T ExecuteScalar<T>()
 		{
-			T val = default(T);
+			// Waiting on Defaultable types support.
+			T val = default!;
 
 			var r = SQLite3.Step(statement);
 			if(r == SQLite3.Result.Row) {
@@ -141,7 +143,7 @@ namespace SQLite
 			Bind(index, val);
 		}
 
-		public void Bind(int index, object val)
+		public void Bind(int index, object? val)
 		{
 			if (index - 1 < currentBindings.Length) {
 				currentBindings[index - 1] = val;
@@ -203,7 +205,7 @@ namespace SQLite
 			statement = SQLite3.Prepare2(conn.Handle, commandText);
 		}
 
-		public int Execute(object[] source)
+		public int Execute(object?[] source)
 		{
 			var r = SQLite3.Result.OK;
 

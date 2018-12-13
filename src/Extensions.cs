@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
+using System.Runtime.CompilerServices;
 
 namespace SQLite
 {
@@ -15,11 +16,11 @@ namespace SQLite
 		/// Gets a compiled delegate for the Getter method of prop.
 		/// </summary>
 		/// <param name="prop"></param>
-		public static Func<object, object> GetGetterDelegate(this PropertyInfo prop)
+		public static Func<object, object?> GetGetterDelegate(this PropertyInfo prop)
 		{
 			var obj = Expression.Parameter(typeof(object), "o");
 			var expr =
-				Expression.Lambda<Func<object, object>>(
+				Expression.Lambda<Func<object, object?>>(
 					Expression.Convert(
 						Expression.Call(
 							Expression.Convert(obj, prop.DeclaringType),
@@ -33,12 +34,12 @@ namespace SQLite
 		/// Gets a compiled delegate for the Setter method of prop.
 		/// </summary>
 		/// <param name="prop"></param>
-		public static Action<object, object> GetSetterDelegate(this PropertyInfo prop)
+		public static Action<object, object?> GetSetterDelegate(this PropertyInfo prop)
 		{
 			var obj = Expression.Parameter(typeof(object), "o");
 			var value = Expression.Parameter(typeof(object), "v");
 			var expr =
-				Expression.Lambda<Action<object, object>>(
+				Expression.Lambda<Action<object, object?>>(
 					Expression.Call(
 						Expression.Convert(obj, prop.DeclaringType),
 						prop.SetMethod,
@@ -55,7 +56,7 @@ namespace SQLite
 		/// <param name="collectionType"></param>
 		/// <param name="elementType"></param>
 		/// <returns>Whether this property is actually a collection type.</returns>
-		public static bool TryUnpackEnumerableTypes(this PropertyInfo property, out Type collectionType, out Type elementType)
+		public static bool TryUnpackEnumerableTypes(this PropertyInfo property, out Type? collectionType, out Type? elementType)
 		{
 			collectionType = null;
 			elementType = null;

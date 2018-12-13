@@ -37,6 +37,12 @@ namespace SQLite
 		{
 			public string ColumnName { get; set; }
 			public bool Ascending { get; set; }
+
+			public Ordering(string columnName, bool ascending)
+			{
+				ColumnName = columnName;
+				Ascending = ascending;
+			}
 		}
 	}
 
@@ -46,18 +52,18 @@ namespace SQLite
 
 		public TableMapping Table { get; private set; }
 
-		Expression _where;
-		List<Ordering> _orderBys;
+		Expression? _where;
+		List<Ordering>? _orderBys;
 		int? _limit;
 		int? _offset;
 
-		BaseTableQuery _joinInner;
-		Expression _joinInnerKeySelector;
-		BaseTableQuery _joinOuter;
-		Expression _joinOuterKeySelector;
-		Expression _joinSelector;
+		BaseTableQuery? _joinInner;
+		Expression? _joinInnerKeySelector;
+		BaseTableQuery? _joinOuter;
+		Expression? _joinOuterKeySelector;
+		Expression? _joinSelector;
 
-		Expression _selector;
+		Expression? _selector;
 
 		TableQuery(SQLiteConnection conn, TableMapping table)
 		{
@@ -118,7 +124,7 @@ namespace SQLite
 		/// <summary>
 		/// Delete all the rows that match this query and the given predicate.
 		/// </summary>
-		public int Delete(Expression<Func<T, bool>> predExpr)
+		public int Delete(Expression<Func<T, bool>>? predExpr)
 		{
 			if(_limit.HasValue || _offset.HasValue) {
 				throw new InvalidOperationException("Cannot delete with limits or offsets");
@@ -219,7 +225,7 @@ namespace SQLite
 			if(orderExpr.NodeType == ExpressionType.Lambda) {
 				var lambda = (LambdaExpression)orderExpr;
 
-				MemberExpression mem = null;
+				MemberExpression? mem = null;
 
 				var unary = lambda.Body as UnaryExpression;
 				if(unary != null && unary.NodeType == ExpressionType.Convert) {
@@ -234,10 +240,9 @@ namespace SQLite
 					if(q._orderBys == null) {
 						q._orderBys = new List<Ordering>();
 					}
-					q._orderBys.Add(new Ordering {
-						ColumnName = Table.FindColumnWithPropertyName(mem.Member.Name).Name,
-						Ascending = asc
-					});
+					q._orderBys.Add(new Ordering(
+						Table.FindColumnWithPropertyName(mem.Member.Name).Name,
+						asc));
 					return q;
 				}
 				else {
@@ -319,11 +324,16 @@ namespace SQLite
 		class CompileResult
 		{
 			public string CommandText { get; set; }
+			public object? Value { get; set; }
 
-			public object Value { get; set; }
+			public CompileResult(string commandText, object? value = null)
+			{
+				CommandText = commandText;
+				Value = value;
+			}
 		}
 
-		private CompileResult CompileExpr(Expression expr, List<object> queryArgs)
+		private CompileResult CompileExpr(Expression? expr, List<object> queryArgs)
 		{
 			if(expr == null) {
 				throw new NotSupportedException("Expression is NULL");
@@ -357,26 +367,25 @@ namespace SQLite
 					text = "(" + leftr.CommandText + " " + GetSqlName(bin) + " " + rightr.CommandText + ")";
 				}
 
-				return new CompileResult { CommandText = text };
+				return new CompileResult(text);
 			}
 			else if(expr.NodeType == ExpressionType.Not) {
 				var operandExpr = ((UnaryExpression)expr).Operand;
 				var opr = CompileExpr(operandExpr, queryArgs);
-				object val = opr.Value;
+				object? val = opr.Value;
 				if(val is bool) {
 					val = !((bool)val);
 				}
 
-				return new CompileResult {
-					CommandText = "NOT(" + opr.CommandText + ")",
-					Value = val
-				};
+				return new CompileResult(
+					"NOT(" + opr.CommandText + ")",
+					val);
 			}
 			else if(expr.NodeType == ExpressionType.Call) {
 
 				var call = (MethodCallExpression)expr;
 				var args = new CompileResult[call.Arguments.Count];
-				var obj = call.Object != null ? CompileExpr(call.Object, queryArgs) : null;
+				CompileResult? obj = call.Object != null ? CompileExpr(call.Object, queryArgs) : null;
 
 				for(var i = 0; i < args.Length; i++) {
 					args[i] = CompileExpr(call.Arguments[i], queryArgs);
@@ -392,10 +401,10 @@ namespace SQLite
 				}
 				else if(call.Method.Name == "Contains" && args.Length == 1) {
 					if(call.Object != null && call.Object.Type == typeof(string)) {
-						sqlCall = "( instr(" + obj.CommandText + "," + args[0].CommandText + ") >0 )";
+						sqlCall = "( instr(" + obj!.CommandText + "," + args[0].CommandText + ") >0 )";
 					}
 					else {
-						sqlCall = "(" + args[0].CommandText + " in " + obj.CommandText + ")";
+						sqlCall = "(" + args[0].CommandText + " in " + obj!.CommandText + ")";
 					}
 				}
 				else if(call.Method.Name == "StartsWith" && args.Length >= 1) {
@@ -406,11 +415,11 @@ namespace SQLite
 					switch(startsWithCmpOp) {
 						case StringComparison.Ordinal:
 						case StringComparison.CurrentCulture:
-							sqlCall = "( substr(" + obj.CommandText + ", 1, " + args[0].Value.ToString().Length + ") =  " + args[0].CommandText + ")";
+							sqlCall = "( substr(" + obj!.CommandText + ", 1, " + args[0].Value?.ToString().Length + ") =  " + args[0].CommandText + ")";
 							break;
 						case StringComparison.OrdinalIgnoreCase:
 						case StringComparison.CurrentCultureIgnoreCase:
-							sqlCall = "(" + obj.CommandText + " like (" + args[0].CommandText + " || '%'))";
+							sqlCall = "(" + obj!.CommandText + " like (" + args[0].CommandText + " || '%'))";
 							break;
 					}
 
@@ -423,48 +432,44 @@ namespace SQLite
 					switch(endsWithCmpOp) {
 						case StringComparison.Ordinal:
 						case StringComparison.CurrentCulture:
-							sqlCall = "( substr(" + obj.CommandText + ", length(" + obj.CommandText + ") - " + args[0].Value.ToString().Length + "+1, " + args[0].Value.ToString().Length + ") =  " + args[0].CommandText + ")";
+							sqlCall = "( substr(" + obj!.CommandText + ", length(" + obj!.CommandText + ") - " + args[0].Value?.ToString()?.Length + "+1, " + args[0].Value?.ToString()?.Length + ") =  " + args[0].CommandText + ")";
 							break;
 						case StringComparison.OrdinalIgnoreCase:
 						case StringComparison.CurrentCultureIgnoreCase:
-							sqlCall = "(" + obj.CommandText + " like ('%' || " + args[0].CommandText + "))";
+							sqlCall = "(" + obj!.CommandText + " like ('%' || " + args[0].CommandText + "))";
 							break;
 					}
 				}
 				else if(call.Method.Name == "Equals" && args.Length == 1) {
-					sqlCall = "(" + obj.CommandText + " = (" + args[0].CommandText + "))";
+					sqlCall = "(" + obj!.CommandText + " = (" + args[0].CommandText + "))";
 				}
 				else if(call.Method.Name == "ToLower") {
-					sqlCall = "(lower(" + obj.CommandText + "))";
+					sqlCall = "(lower(" + obj!.CommandText + "))";
 				}
 				else if(call.Method.Name == "ToUpper") {
-					sqlCall = "(upper(" + obj.CommandText + "))";
+					sqlCall = "(upper(" + obj!.CommandText + "))";
 				}
 				else if(call.Method.Name == "Replace" && args.Length == 2) {
-					sqlCall = "(replace(" + obj.CommandText + "," + args[0].CommandText + "," + args[1].CommandText + "))";
+					sqlCall = "(replace(" + obj!.CommandText + "," + args[0].CommandText + "," + args[1].CommandText + "))";
 				}
 				else {
 					sqlCall = call.Method.Name.ToLower() + "(" + string.Join(",", args.Select(a => a.CommandText).ToArray()) + ")";
 				}
-				return new CompileResult { CommandText = sqlCall };
+				return new CompileResult(sqlCall);
 
 			}
 			else if(expr.NodeType == ExpressionType.Constant) {
 				var c = (ConstantExpression)expr;
 				queryArgs.Add(c.Value);
-				return new CompileResult {
-					CommandText = "?",
-					Value = c.Value
-				};
+				return new CompileResult("?", c.Value);
 			}
 			else if(expr.NodeType == ExpressionType.Convert) {
 				var u = (UnaryExpression)expr;
 				var ty = u.Type;
 				var valr = CompileExpr(u.Operand, queryArgs);
-				return new CompileResult {
-					CommandText = valr.CommandText,
-					Value = valr.Value != null ? ConvertTo(valr.Value, ty) : null
-				};
+				return new CompileResult(
+					valr.CommandText, 
+					valr.Value != null ? ConvertTo(valr.Value, ty) : null);
 			}
 			else if(expr.NodeType == ExpressionType.MemberAccess) {
 				var mem = (MemberExpression)expr;
@@ -483,10 +488,10 @@ namespace SQLite
 					// Need to translate it if that column name is mapped
 					//
 					var columnName = Table.FindColumnWithPropertyName(mem.Member.Name).Name;
-					return new CompileResult { CommandText = "\"" + columnName + "\"" };
+					return new CompileResult("\"" + columnName + "\"" );
 				}
 				else {
-					object obj = null;
+					object? obj = null;
 					if(mem.Expression != null) {
 						var r = CompileExpr(mem.Expression, queryArgs);
 						if(r.Value == null) {
@@ -501,7 +506,7 @@ namespace SQLite
 					//
 					// Get the member value
 					//
-					object val = null;
+					object? val = null;
 
 					if(mem.Member is PropertyInfo) {
 						var m = (PropertyInfo)mem.Member;
@@ -529,24 +534,18 @@ namespace SQLite
 							head = ",";
 						}
 						sb.Append(")");
-						return new CompileResult {
-							CommandText = sb.ToString(),
-							Value = val
-						};
+						return new CompileResult(sb.ToString(), val);
 					}
 					else {
 						queryArgs.Add(val);
-						return new CompileResult {
-							CommandText = "?",
-							Value = val
-						};
+						return new CompileResult("?", val);
 					}
 				}
 			}
 			throw new NotSupportedException("Cannot compile: " + expr.NodeType.ToString());
 		}
 
-		static object ConvertTo(object obj, Type t)
+		static object? ConvertTo(object obj, Type t)
 		{
 			Type nut = Nullable.GetUnderlyingType(t);
 

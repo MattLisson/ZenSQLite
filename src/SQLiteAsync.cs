@@ -36,7 +36,7 @@ namespace SQLite
 	public class SQLiteAsyncConnection
 	{
 		private readonly SQLiteConnectionString _connectionString;
-		private readonly SQLiteConnectionWithLock _fullMutexReadConnection;
+		private readonly SQLiteConnectionWithLock? _fullMutexReadConnection;
 		private readonly bool isFullMutex;
 		private readonly SQLiteOpenFlags _openFlags;
 		private readonly SQLiteConfig _config;
@@ -51,7 +51,7 @@ namespace SQLite
 		/// <param name="key">
 		/// Specifies the encryption key to use on the database. Should be a string or a byte[].
 		/// </param>
-		public SQLiteAsyncConnection(string databasePath, SQLiteConfig config, object key = null)
+		public SQLiteAsyncConnection(string databasePath, SQLiteConfig config, object? key = null)
 			: this(databasePath, config,
 				  SQLiteOpenFlags.FullMutex | SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create,
 				  key: key)
@@ -79,7 +79,7 @@ namespace SQLite
 		/// <param name="key">
 		/// Specifies the encryption key to use on the database. Should be a string or a byte[].
 		/// </param>
-		public SQLiteAsyncConnection(string databasePath, SQLiteConfig config, SQLiteOpenFlags openFlags, bool storeDateTimeAsTicks = true, object key = null)
+		public SQLiteAsyncConnection(string databasePath, SQLiteConfig config, SQLiteOpenFlags openFlags, bool storeDateTimeAsTicks = true, object? key = null)
 		{
 			_openFlags = openFlags;
 			isFullMutex = _openFlags.HasFlag(SQLiteOpenFlags.FullMutex);
@@ -114,7 +114,7 @@ namespace SQLite
 		/// </summary>
 		public Task SetBusyTimeoutAsync(TimeSpan value)
 		{
-			return ReadAsync<object>(conn => {
+			return ReadAsync<object?>(conn => {
 				conn.BusyTimeout = value;
 				return null;
 			});
@@ -188,7 +188,9 @@ namespace SQLite
 		{
 			return Task.Factory.StartNew(() => {
 				var conn = isFullMutex ? _fullMutexReadConnection : GetConnection();
+#pragma warning disable CS8602 // Possible dereference of a null reference.
 				using(conn.Lock()) {
+#pragma warning restore CS8602 // Possible dereference of a null reference.
 					return read(conn);
 				}
 			}, CancellationToken.None, TaskCreationOptions.DenyChildAttach, TaskScheduler.Default);
@@ -209,7 +211,7 @@ namespace SQLite
 		/// </summary>
 		public Task EnableLoadExtensionAsync(bool enabled)
 		{
-			return WriteAsync<object>(conn => {
+			return WriteAsync<object?>(conn => {
 				conn.EnableLoadExtension(enabled);
 				return null;
 			});
@@ -865,7 +867,7 @@ namespace SQLite
 		/// </param>
 		public Task RunInTransactionAsync(Action<SQLiteConnection> action)
 		{
-			return WriteAsync<object>(conn => {
+			return WriteAsync<object?>(conn => {
 				conn.BeginTransaction();
 				try {
 					action(conn);
@@ -914,6 +916,7 @@ namespace SQLite
 		/// The number of rows modified in the database as a result of this execution.
 		/// </returns>
 		public Task<T> ExecuteScalarAsync<T>(string query, params object[] args)
+			where T : struct
 		{
 			return WriteAsync(conn => {
 				var command = conn.CreateCommand(query, args);
@@ -1040,7 +1043,9 @@ namespace SQLite
 				using(var l = Connection.Lock()) {
 					Connection.Dispose();
 				}
+#pragma warning disable CS8625 // Cannot convert null literal to non-nullable reference or unconstrained type parameter.
 				Connection = null;
+#pragma warning restore CS8625 // Cannot convert null literal to non-nullable reference or unconstrained type parameter.
 			}
 		}
 

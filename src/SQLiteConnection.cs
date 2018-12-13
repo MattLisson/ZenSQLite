@@ -134,7 +134,7 @@ namespace SQLite
 		private Random _rand = new Random();
 
 		public Sqlite3DatabaseHandle Handle { get; private set; }
-		static readonly Sqlite3DatabaseHandle NullHandle = default(Sqlite3DatabaseHandle);
+		static readonly Sqlite3DatabaseHandle? NullHandle = default(Sqlite3DatabaseHandle);
 
 		/// <summary>
 		/// Gets the database path used by this connection.
@@ -180,7 +180,7 @@ namespace SQLite
 		/// <param name="key">
 		/// Specifies the encryption key to use on the database. Should be a string or a byte[].
 		/// </param>
-		public SQLiteConnection(string databasePath, SQLiteConfig config, object key = null)
+		public SQLiteConnection(string databasePath, SQLiteConfig config, object? key = null)
 			: this(databasePath, config, SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create, key: key)
 		{
 		}
@@ -198,7 +198,7 @@ namespace SQLite
 		/// <param name="key">
 		/// Specifies the encryption key to use on the database. Should be a string or a byte[].
 		/// </param>
-		public SQLiteConnection(string databasePath, SQLiteConfig config, SQLiteOpenFlags openFlags, object key = null)
+		public SQLiteConnection(string databasePath, SQLiteConfig config, SQLiteOpenFlags openFlags, object? key = null)
 		{
 			config.AddTable<ColumnInfo>();
 			this.Config = config;
@@ -589,14 +589,14 @@ namespace SQLite
 		/// <param name="unique">Whether the index should be unique</param>
 		public int CreateIndex<T>(Expression<Func<T, object>> property, bool unique = false)
 		{
-			MemberExpression mx;
+			MemberExpression? mx;
 			if(property.Body.NodeType == ExpressionType.Convert) {
 				mx = ((UnaryExpression)property.Body).Operand as MemberExpression;
 			}
 			else {
 				mx = (property.Body as MemberExpression);
 			}
-			var propertyInfo = mx.Member as PropertyInfo;
+			var propertyInfo = mx?.Member as PropertyInfo;
 			if(propertyInfo == null) {
 				throw new ArgumentException("The lambda expression 'property' should point to a valid Property");
 			}
@@ -615,7 +615,7 @@ namespace SQLite
 			//			public int cid { get; set; }
 
 			[Column("name")]
-			public string Name { get; set; }
+			public string? Name { get; set; }
 
 			//			[Column ("type")]
 			//			public string ColumnType { get; set; }
@@ -626,7 +626,7 @@ namespace SQLite
 
 			//			public int pk { get; set; }
 
-			public override string ToString()
+			public override string? ToString()
 			{
 				return Name;
 			}
@@ -679,7 +679,7 @@ namespace SQLite
 		/// <returns>
 		/// A <see cref="SQLiteStatement"/>
 		/// </returns>
-		public SQLiteStatement CreateCommand(string cmdText, params object[] ps)
+		public SQLiteStatement CreateCommand(string cmdText, params object?[] ps)
 		{
 			if(!_open) {
 				throw SQLiteException.New(SQLite3.Result.Error, "Cannot create commands from unopened database");
@@ -709,7 +709,7 @@ namespace SQLite
 		/// <returns>
 		/// The number of rows modified in the database as a result of this execution.
 		/// </returns>
-		public int Execute(string query, params object[] args)
+		public int Execute(string query, params object?[] args)
 		{
 			var cmd = CreateCommand(query, args);
 			var r = cmd.ExecuteNonQuery();
@@ -1119,7 +1119,7 @@ namespace SQLite
 		/// </summary>
 		/// <param name="savepoint">The name of the savepoint to roll back to, as returned by <see cref="SaveTransactionPoint"/>.  If savepoint is null or empty, this method is equivalent to a call to <see cref="Rollback"/></param>
 		/// <param name="noThrow">true to avoid throwing exceptions, false otherwise</param>
-		void RollbackTo(string savepoint, bool noThrow)
+		void RollbackTo(string? savepoint, bool noThrow)
 		{
 			// Rolling back without a TO clause rolls backs all transactions
 			//    and leaves the transaction stack empty.
@@ -1467,17 +1467,17 @@ namespace SQLite
 			}
 
 			var map = GetMapping(objType);
-
-			if(map.PK != null && map.PK.IsAutoGuid) {
-				if(map.PK.GetProperty(obj).Equals(Guid.Empty)) {
-					map.PK.SetProperty(obj, Guid.NewGuid());
+			TableMapping.Column? pk = map.PK;
+			if(pk != null && pk.IsAutoGuid) {
+				if(Equals(pk.GetProperty(obj), Guid.Empty)) {
+					pk.SetProperty(obj, Guid.NewGuid());
 				}
 			}
 
 			var replacing = string.Compare(extra, "OR REPLACE", StringComparison.OrdinalIgnoreCase) == 0;
 
 			var cols = replacing ? map.InsertOrReplaceColumns : map.InsertColumns;
-			var vals = new object[cols.Length];
+			var vals = new object?[cols.Length];
 			for(var i = 0; i < vals.Length; i++) {
 				vals[i] = cols[i].GetProperty(obj);
 			}
@@ -1618,14 +1618,14 @@ namespace SQLite
 					   select p;
 			var vals = from c in cols
 					   select c.GetProperty(obj);
-			var ps = new List<object>(vals);
+			var ps = new List<object?>(vals);
 			if(ps.Count == 0) {
 				// There is a PK but no accompanying data,
 				// so reset the PK to make the UPDATE work.
 				cols = map.Columns;
 				vals = from c in cols
 					   select c.GetProperty(obj);
-				ps = new List<object>(vals);
+				ps = new List<object?>(vals);
 			}
 			ps.Add(pk.GetProperty(obj));
 			var q = string.Format("update \"{0}\" set {1} where {2} = ? ", map.TableName, string.Join(",", (from c in cols
@@ -1829,7 +1829,9 @@ namespace SQLite
 					}
 				}
 				finally {
+#pragma warning disable CS8601 // Possible null reference assignment.
 					Handle = NullHandle;
+#pragma warning restore CS8601 // Possible null reference assignment.
 					_open = false;
 				}
 			}

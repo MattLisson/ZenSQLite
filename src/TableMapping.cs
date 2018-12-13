@@ -43,13 +43,13 @@ namespace SQLite
 
 		public Column[] Columns { get; }
 
-		public Column PK { get; }
+		public Column? PK { get; }
 
 		public string GetByPrimaryKeySql { get; }
 
 		public CreateFlags CreateFlags { get; }
 
-		readonly Column _autoPk;
+		readonly Column? _autoPk;
 		public bool HasAutoIncPK => _autoPk != null;
 
 		public Column[] InsertColumns { get; }
@@ -185,8 +185,8 @@ namespace SQLite
 
 			private ReadColumnDelegate ReadColumnFunc { get; }
 			private WriteColumnDelegate WriteColumnFunc { get; }
-			private Func<object, object> GetFunc { get; }
-			private Action<object, object> SetFunc { get; }
+			private Func<object, object?> GetFunc { get; }
+			private Action<object, object?> SetFunc { get; }
 
 			public string SqlDecl {
 				get {
@@ -215,7 +215,9 @@ namespace SQLite
 				}
 			}
 
+#pragma warning disable CS8618 // Non-nullable field is uninitialized.
 			public Column(PropertyInfo prop, SQLiteConfig config)
+#pragma warning restore CS8618 // Non-nullable field is uninitialized.
 			{
 				var colAttr = prop.GetCustomAttribute<ColumnAttribute>();
 				CreateFlags createFlags = config.CreateFlags;
@@ -256,23 +258,30 @@ namespace SQLite
 				var foreignKeyAttr = PropertyInfo.GetCustomAttribute<ForeignKeyAttribute>();
 				if(foreignKeyAttr != null) {
 					ForeignTable = config.GetTable(foreignKeyAttr.TargetType);
-					string targetPropertyName = foreignKeyAttr.TargetPropertyName;
-					ForeignColumn = targetPropertyName == null ? ForeignTable.PK :
-						ForeignTable.FindColumnWithPropertyName(foreignKeyAttr.TargetPropertyName);
+					string? targetPropertyName = foreignKeyAttr.TargetPropertyName;
+					Column? otherPK = ForeignTable.PK;
+					if(targetPropertyName != null) {
+						ForeignColumn = ForeignTable.FindColumnWithPropertyName(targetPropertyName);
+					} else if (otherPK != null) {
+						ForeignColumn = otherPK;
+					} else {
+						throw new ArgumentException("Foreign Key Target Property must be provided when" +
+							" the other table has no Primary Key");
+					}
 				}
 			}
 
-			public void SetProperty(object obj, object val)
+			public void SetProperty(object obj, object? val)
 			{
 				SetFunc(obj, val);
 			}
 
-			public object GetProperty(object obj)
+			public object? GetProperty(object obj)
 			{
 				return GetFunc(obj);
 			}
 
-			public object ReadColumn(Sqlite3StatementHandle statement, int index)
+			public object? ReadColumn(Sqlite3StatementHandle statement, int index)
 			{
 				return ReadColumnFunc(statement, index);
 			}
@@ -294,13 +303,15 @@ namespace SQLite
 		private Type CollectionType { get; }
 		private Type ElementType { get; }
 
+#pragma warning disable CS8618 // Non-nullable field is uninitialized.
 		public ManyToManyRelationship(PropertyInfo prop)
+#pragma warning restore CS8618 // Non-nullable field is uninitialized.
 		{
-			if (!prop.TryUnpackEnumerableTypes(out Type collectionType, out Type elementType)) {
+			if (!prop.TryUnpackEnumerableTypes(out Type? collectionType, out Type? elementType)) {
 				throw new ArgumentException($"A Collection type is required for ManyToMany, can't use:\n{prop}");
 			}
-			CollectionType = collectionType;
-			ElementType = elementType;
+			CollectionType = collectionType!;
+			ElementType = elementType!;
 			PropertyInfo = prop;
 		}
 

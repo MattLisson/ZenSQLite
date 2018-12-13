@@ -70,7 +70,7 @@ namespace SQLite
 	[AttributeUsage(AttributeTargets.Property)]
 	public class IndexedAttribute : Attribute
 	{
-		public string Name { get; set; }
+		public string? Name { get; set; }
 		public int Order { get; set; }
 		public virtual bool Unique { get; set; }
 
@@ -89,9 +89,9 @@ namespace SQLite
 	public class ForeignKeyAttribute : Attribute
 	{
 		public Type TargetType { get; }
-		public string TargetPropertyName { get; }
+		public string? TargetPropertyName { get; }
 
-		public ForeignKeyAttribute(Type targetType, string targetPropertyName = null)
+		public ForeignKeyAttribute(Type targetType, string? targetPropertyName = null)
 		{
 			TargetType = targetType;
 			TargetPropertyName = targetPropertyName;

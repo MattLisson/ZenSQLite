@@ -33,9 +33,9 @@ namespace SQLite
 		public string ConnectionString { get; private set; }
 		public string DatabasePath { get; private set; }
 		public bool StoreDateTimeAsTicks { get; private set; }
-		public object Key { get; private set; }
+		public object? Key { get; private set; }
 
-		public SQLiteConnectionString(string databasePath, bool storeDateTimeAsTicks, object key)
+		public SQLiteConnectionString(string databasePath, bool storeDateTimeAsTicks, object? key)
 		{
 			ConnectionString = databasePath;
 			StoreDateTimeAsTicks = storeDateTimeAsTicks;

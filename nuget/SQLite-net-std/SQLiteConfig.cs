@@ -178,7 +178,7 @@ namespace SQLite
 		///		You shouldn't handle null values, that will be done by the library.
 		/// </param>
 		/// <returns>This config for chaining.</returns>
-		public SQLiteConfig AddType(Type type, string sqlType, ReadColumnDelegate reader, WriteColumnDelegate writer)
+		public SQLiteConfig AddType(Type type, string sqlType, NonNullReadColumnDelegate reader, NonNullWriteColumnDelegate writer)
 		{
 			columnReaders[type] = NullHandlingReader(reader);
 			columnWriters[type] = NullHandlingWriter(writer);
@@ -263,7 +263,7 @@ namespace SQLite
 			return columnWriters[clrType];
 		}
 
-		private static WriteColumnDelegate NullHandlingWriter(WriteColumnDelegate innerDelegate)
+		private static WriteColumnDelegate NullHandlingWriter(NonNullWriteColumnDelegate innerDelegate)
 		{
 			return (s, i, v) => {
 				if(v == null) {
@@ -274,7 +274,7 @@ namespace SQLite
 			};
 		}
 
-		private static ReadColumnDelegate NullHandlingReader(ReadColumnDelegate innerDelegate)
+		private static ReadColumnDelegate NullHandlingReader(NonNullReadColumnDelegate innerDelegate)
 		{
 			return (s, i) => {
 				var colType = SQLite3.ColumnType(s, i);
