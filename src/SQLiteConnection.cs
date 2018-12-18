@@ -162,13 +162,11 @@ namespace SQLite
 		/// </summary>
 		/// <value>The tracer.</value>
 		public Action<string> Tracer { get; set; }
-
-#if USE_SQLITEPCL_RAW && !NO_SQLITEPCL_RAW_BATTERIES
+		
 		static SQLiteConnection()
 		{
 			SQLitePCL.Batteries_V2.Init();
 		}
-#endif
 
 		/// <summary>
 		/// Constructs a new SQLiteConnection and opens a SQLite database specified by databasePath.
@@ -248,6 +246,17 @@ namespace SQLite
 				ExecuteScalar<string>("PRAGMA journal_mode=WAL");
 			}
 			ExecuteScalar<string>("PRAGMA foreign_keys = ON");
+
+			int currentUserVersion = ExecuteScalar<int>("PRAGMA user_version");
+			int newUserVersion = config.UserVersion;
+			if (currentUserVersion == newUserVersion) {
+				return;
+			} else if (currentUserVersion > newUserVersion) {
+				throw new NotSupportedException(
+					$"Can not downgrade database from version({currentUserVersion}) to version({newUserVersion}");
+			} else {
+				config.GetUpgradePath(currentUserVersion)(this);
+			}
 		}
 
 		/// <summary>
@@ -804,9 +813,9 @@ namespace SQLite
 		/// <returns>
 		/// An enumerable with one result for each row returned by the query.
 		/// </returns>
-		public List<object> Query(TableMapping map, string query, params object[] args)
+		public List<object> Query(TableMapping map, string query, params object?[] args)
 		{
-			var cmd = CreateCommand(query, args);
+			SQLiteStatement cmd = CreateCommand(query, args);
 			return cmd.ExecuteQuery<object>(map);
 		}
 
@@ -1598,7 +1607,7 @@ namespace SQLite
 		/// <returns>
 		/// The number of rows updated.
 		/// </returns>
-		public int Update(object obj, Type objType)
+		public int Update(object? obj, Type? objType)
 		{
 			int rowsAffected = 0;
 			if(obj == null || objType == null) {
@@ -1617,14 +1626,14 @@ namespace SQLite
 					   where p != pk
 					   select p;
 			var vals = from c in cols
-					   select c.GetProperty(obj);
+					   select c.GetProperty(obj!);
 			var ps = new List<object?>(vals);
 			if(ps.Count == 0) {
 				// There is a PK but no accompanying data,
 				// so reset the PK to make the UPDATE work.
 				cols = map.Columns;
 				vals = from c in cols
-					   select c.GetProperty(obj);
+					   select c.GetProperty(obj!);
 				ps = new List<object?>(vals);
 			}
 			ps.Add(pk.GetProperty(obj));

@@ -121,10 +121,5 @@ namespace SQLite
 			return null;
 		}
 
-		public static bool IsMarkedNotNull(MemberInfo p)
-		{
-			return p.CustomAttributes.Any(x => x.AttributeType == typeof(NotNullAttribute));
-		}
-
 	}
 }

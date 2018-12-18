@@ -23,10 +23,8 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
-using System.Text;
 using Sqlite3StatementHandle = SQLitePCL.sqlite3_stmt;
 
 #pragma warning disable 1591 // XML Doc Comments
@@ -168,8 +166,8 @@ namespace SQLite
 			public Type ClrType { get; }
 			public string SqlType { get; }
 
-			public TableMapping ForeignTable { get; private set; }
-			public Column ForeignColumn { get; private set; }
+			public TableMapping? ForeignTable { get; private set; }
+			public Column? ForeignColumn { get; private set; }
 			public bool IsForeignKey => ForeignTable != null;
 
 			public IEnumerable<IndexedAttribute> Indices { get; set; }
@@ -181,7 +179,8 @@ namespace SQLite
 			public bool IsNullable { get; }
 
 			public int? MaxStringLength { get; }
-			public string Collation { get; }
+			public string? Collation { get; }
+			public string? DefaultSqlValue { get; }
 
 			private ReadColumnDelegate ReadColumnFunc { get; }
 			private WriteColumnDelegate WriteColumnFunc { get; }
@@ -202,16 +201,18 @@ namespace SQLite
 						constraints.Add("NOT NULL");
 					}
 					if(!string.IsNullOrEmpty(Collation)) {
-						constraints.Add("COLLATE " + Collation);
+						constraints.Add($"COLLATE {Collation}");
 					}
 					if(IsForeignKey) {
 						constraints.Add(
-							$@"REFERENCES ""{ForeignTable.TableName}"" (""{ForeignColumn.Name}"")");
+							$@"REFERENCES ""{ForeignTable!.TableName}"" (""{ForeignColumn!.Name}"")");
 					}
-
-					string sqlType = SqlType;
+					if (DefaultSqlValue != null) {
+						constraints.Add(@$"DEFAULT ""{DefaultSqlValue}""");
+					}
+					
 					string constraintsString = string.Join(" ", constraints);
-					return $@"""{Name}"" ""{sqlType}"" {constraintsString}";
+					return $@"""{Name}"" ""{SqlType}"" {constraintsString}";
 				}
 			}
 
@@ -225,13 +226,26 @@ namespace SQLite
 				GetFunc = prop.GetGetterDelegate();
 				SetFunc = prop.GetSetterDelegate();
 				Name = colAttr?.Name ?? prop.Name;
-				//If this type is Nullable<T> then Nullable.GetUnderlyingType returns the T, otherwise it returns null, so get the actual type instead
-				ClrType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
 
 				Collation = Orm.Collation(prop);
 				IsPK = Orm.IsPK(prop) ||
 					(((createFlags & CreateFlags.ImplicitPK) == CreateFlags.ImplicitPK) &&
 					 	string.Compare(prop.Name, Orm.ImplicitPkName, StringComparison.OrdinalIgnoreCase) == 0);
+				var defaultAttribute = prop.GetCustomAttribute<DefaultValueAttribute>();
+				if (defaultAttribute != null) {
+					DefaultSqlValue = defaultAttribute.SqlValue;
+				}
+				//If this type is Nullable<T> then Nullable.GetUnderlyingType returns the T, otherwise it returns null, so get the actual type instead
+
+				bool isNullableValueType = Nullable.GetUnderlyingType(prop.PropertyType) != null;
+				bool hasNullableAttribute = prop.GetCustomAttribute<NullableAttribute>() != null;
+
+				if (isNullableValueType && IsPK) {
+					throw new NotSupportedException("The primary key must be non-null for some reason");
+				}
+				ClrType = isNullableValueType ? Nullable.GetUnderlyingType(prop.PropertyType) : prop.PropertyType;
+
+				IsNullable = isNullableValueType || hasNullableAttribute;
 
 				var isAuto = Orm.IsAutoInc(prop) || (IsPK && ((createFlags & CreateFlags.AutoIncPK) == CreateFlags.AutoIncPK));
 				IsAutoGuid = isAuto && ClrType == typeof(Guid);
@@ -245,7 +259,6 @@ namespace SQLite
 					) {
 					Indices = new IndexedAttribute[] { new IndexedAttribute() };
 				}
-				IsNullable = !(IsPK || Orm.IsMarkedNotNull(prop));
 				MaxStringLength = Orm.MaxStringLength(prop);
 				SqlType = config.SqlTypeFor(ClrType, MaxStringLength);
 

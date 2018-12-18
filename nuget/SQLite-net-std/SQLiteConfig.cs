@@ -32,6 +32,27 @@ namespace SQLite
 		private readonly Dictionary<Type, string> sqlTypeOverrides =
 			new Dictionary<Type, string>();
 
+        /// <summary>
+        /// The User Version of the database schema. Update this when the schema changes to execute custom upgrades.
+        /// </summary>
+        public int UserVersion { get; private set; } = 0;
+
+		private class Migration
+		{
+			public int startVersion, endVersion;
+			public Action<SQLiteConnection> upgradeAction;
+
+			public Migration(int startVersion, int endVersion, Action<SQLiteConnection> upgradeAction)
+			{
+				this.startVersion = startVersion;
+				this.endVersion = endVersion;
+				this.upgradeAction = upgradeAction;
+			}
+		}
+
+		private readonly Dictionary<int, List<Migration>> migrations
+			= new Dictionary<int, List<Migration>>();
+
 		/// <summary>
 		/// Flags to be used when creating tables.
 		/// </summary>
@@ -79,7 +100,7 @@ namespace SQLite
 				NullHandlingWriter((s, i, v) => SQLite3.BindInt(s, i, (int)v));
 
 			columnWriters[typeof(string)] =
-				NullHandlingWriter((s, i, v) => SQLite3.BindText(s, i, (string)v, -1));
+				NullHandlingWriter((s, i, v) => SQLite3.BindText(s, i, (string)v));
 
 			columnWriters[typeof(byte)] =
 				NullHandlingWriter((s, i, v) => SQLite3.BindInt(s, i, Convert.ToInt32(v)));
@@ -103,7 +124,7 @@ namespace SQLite
 				NullHandlingWriter((s, i, v) => SQLite3.BindBlob(s, i, (byte[])v, ((byte[])v).Length));
 
 			columnWriters[typeof(Guid)] =
-				NullHandlingWriter((s, i, v) => SQLite3.BindText(s, i, ((Guid)v).ToString(), 72));
+				NullHandlingWriter((s, i, v) => SQLite3.BindText(s, i, ((Guid)v).ToString()));
 		}
 
 		/// <summary>
@@ -130,6 +151,31 @@ namespace SQLite
 				map = new TableMapping(type, this);
 				mappings[key] = map;
 			}
+			return this;
+		}
+
+		/// <summary>
+		/// Sets the current User Version of the database. Used to decide which migration actions to run.
+		/// </summary>
+		public SQLiteConfig SetUserVersion(int userVersion)
+		{
+			UserVersion = userVersion;
+			return this;
+		}
+
+		/// <summary>
+		/// Adds a migration action between the specified user versions.
+		/// </summary>
+		/// <param name="oldUserVersion">The user version at the beginning of the upgrade.</param>
+		/// <param name="newUserVersion">The user version after the upgrade is complete.</param>
+		/// <param name="upgradeAction"> Will be called to migrate the database to the schema expected by
+		/// newUserVersion.</param>
+		public SQLiteConfig AddMigration(int oldUserVersion, int newUserVersion, Action<SQLiteConnection> upgradeAction)
+		{
+			if (!migrations.ContainsKey(oldUserVersion)) {
+				migrations[oldUserVersion] = new List<Migration>();
+			}
+			migrations[oldUserVersion].Add(new Migration(oldUserVersion, newUserVersion, upgradeAction));
 			return this;
 		}
 
@@ -205,8 +251,8 @@ namespace SQLite
 						}
 						return Enum.ToObject(type, SQLite3.ColumnInt(s, i));
 					},
-				   (s, i, v) => SQLite3.BindText(s, i, Enum.GetName(type, v), -1)
-				);
+				   (s, i, v) => SQLite3.BindText(s, i, Enum.GetName(type, v))
+                );
 			}
 			return this;
 		}
@@ -316,6 +362,39 @@ namespace SQLite
 				return "varchar(36)";
 			}
 			throw new NotSupportedException("Don't know about " + clrType);
+		}
+
+		/// <summary>
+		/// Finds an upgrade path from the current version to the configured version.
+		/// </summary>
+		/// <param name="currentUserVersion">The current version of the database.</param>
+		/// <returns>A function that will upgrade the database to UserVersion from this config.</returns>
+		public Action<SQLiteConnection> GetUpgradePath(int currentUserVersion)
+		{
+			List<Migration> migrationSteps = new List<Migration>();
+			int startingVersion = currentUserVersion;
+			while(startingVersion != UserVersion) {
+				Migration? furthestAlong = null;
+				foreach(Migration migration in migrations[startingVersion]) {
+					if (migration.endVersion > (furthestAlong?.endVersion ?? 0)) {
+						furthestAlong = migration;
+					}
+				}
+				if (furthestAlong == null) {
+					throw new NotSupportedException($"No migration found from {startingVersion}.");
+				}
+				migrationSteps.Add(furthestAlong);
+				startingVersion = furthestAlong.endVersion;
+			}
+
+			return (connection) => {
+				connection.BeginTransaction();
+				foreach(Migration migration in migrationSteps) {
+					migration.upgradeAction(connection);
+					connection.ExecuteScalar<string>($"PRAGMA user_version = {migration.endVersion}");
+				}
+				connection.Commit();
+			};
 		}
 	}
 }

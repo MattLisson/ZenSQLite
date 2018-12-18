@@ -224,8 +224,8 @@ namespace SQLite
 			return Sqlite3.sqlite3_bind_double(statement, index, val);
 		}
 
-		public static int BindText(Sqlite3StatementHandle statement, int index, string val, int n)
-		{
+		public static int BindText(Sqlite3StatementHandle statement, int index, string val)
+        {
 			return Sqlite3.sqlite3_bind_text(statement, index, val);
 		}
 

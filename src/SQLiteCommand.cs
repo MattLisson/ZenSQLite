@@ -123,15 +123,15 @@ namespace SQLite
 			T val = default!;
 
 			var r = SQLite3.Step(statement);
-			if(r == SQLite3.Result.Row) {
-				Type t = typeof(T);
-				var readFunc = conn.Config.ColumnReader(t);
-				val = (T)readFunc(statement, 0);
-			}
-			else if(r == SQLite3.Result.Done) {
-			}
-			else {
-				throw SQLiteException.New(r, SQLite3.GetErrmsg(conn.Handle));
+			while(r != SQLite3.Result.Done) {
+				if(r == SQLite3.Result.Row) {
+					Type t = typeof(T);
+					var readFunc = conn.Config.ColumnReader(t);
+					return (T)readFunc(statement, 0);
+				} else if(r != SQLite3.Result.Done) {
+					throw SQLiteException.New(r, SQLite3.GetErrmsg(conn.Handle));
+				}
+				r = SQLite3.Step(statement);
 			}
 
 			return val;
@@ -234,8 +234,9 @@ namespace SQLite
 				throw NotNullConstraintViolationException.New(r, SQLite3.GetErrmsg(connection.Handle));
 			}
 			else {
+				string msg = SQLite3.GetErrmsg(connection.Handle);
 				SQLite3.Reset(statement);
-				throw SQLiteException.New(r, r.ToString());
+				throw SQLiteException.New(r, msg);
 			}
 		}
 

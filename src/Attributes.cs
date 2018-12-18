@@ -86,6 +86,17 @@ namespace SQLite
 	}
 
 	[AttributeUsage(AttributeTargets.Property)]
+	public class DefaultValueAttribute : Attribute
+	{
+		public string SqlValue { get; set; }
+
+		public DefaultValueAttribute(string sqlValue)
+		{
+			SqlValue = sqlValue;
+		}
+	}
+
+	[AttributeUsage(AttributeTargets.Property)]
 	public class ForeignKeyAttribute : Attribute
 	{
 		public Type TargetType { get; }
@@ -164,7 +175,7 @@ namespace SQLite
 	}
 
 	[AttributeUsage(AttributeTargets.Property)]
-	public class NotNullAttribute : Attribute
+	public class NullableAttribute : Attribute
 	{
 	}
 
