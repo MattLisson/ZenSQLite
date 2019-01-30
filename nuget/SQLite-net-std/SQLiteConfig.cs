@@ -35,7 +35,7 @@ namespace SQLite
         /// <summary>
         /// The User Version of the database schema. Update this when the schema changes to execute custom upgrades.
         /// </summary>
-        public int UserVersion { get; private set; } = 0;
+        public int UserVersion { get; private set; } = 1;
 
 		private class Migration
 		{
@@ -64,6 +64,9 @@ namespace SQLite
 		/// <param name="createFlags">Flags to be used when creating tables.</param>
 		public SQLiteConfig(CreateFlags createFlags)
 		{
+			AddMigration(0, 1, connection => {
+				connection.CreateAllTables();
+			});
 			CreateFlags = createFlags;
 
 			// Set up default types;
@@ -371,6 +374,9 @@ namespace SQLite
 		/// <returns>A function that will upgrade the database to UserVersion from this config.</returns>
 		public Action<SQLiteConnection> GetUpgradePath(int currentUserVersion)
 		{
+			if (currentUserVersion == 0) {
+				return connection => connection.CreateAllTables();
+			}
 			List<Migration> migrationSteps = new List<Migration>();
 			int startingVersion = currentUserVersion;
 			while(startingVersion != UserVersion) {
