@@ -127,7 +127,8 @@ namespace SQLite
 				if(r == SQLite3.Result.Row) {
 					Type t = typeof(T);
 					var readFunc = conn.Config.ColumnReader(t);
-					return (T)readFunc(statement, 0);
+					object? value = readFunc(statement, 0);
+					return (T)readFunc(statement, 0)!;
 				} else if(r != SQLite3.Result.Done) {
 					throw SQLiteException.New(r, SQLite3.GetErrmsg(conn.Handle));
 				}
