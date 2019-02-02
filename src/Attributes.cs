@@ -128,6 +128,17 @@ namespace SQLite
 	}
 
 	[AttributeUsage(AttributeTargets.Property)]
+	public class PropertyAliasAttribute : IgnoreAttribute
+	{
+		public string OtherProperty { get; }
+
+		public PropertyAliasAttribute(string otherProperty)
+		{
+			OtherProperty = otherProperty;
+		}
+	}
+
+	[AttributeUsage(AttributeTargets.Property)]
 	public class IgnoreAttribute : Attribute
 	{
 	}

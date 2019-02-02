@@ -40,6 +40,7 @@ namespace SQLite
 		public bool WithoutRowId { get; }
 
 		public Column[] Columns { get; }
+		public PropertyAlias[] Aliases { get; }
 
 		public Column? PK { get; }
 
@@ -70,7 +71,18 @@ namespace SQLite
 						.Select(x => (TableAttribute)Orm.InflateAttribute(x))
 						.FirstOrDefault();
 
-			TableName = (tableAttr != null && !string.IsNullOrEmpty(tableAttr.Name)) ? tableAttr.Name : MappedType.Name;
+			string? explicitName = tableAttr?.Name;
+			if (!string.IsNullOrEmpty(explicitName)) {
+				TableName = explicitName;
+			} else if (MappedType.GenericTypeArguments.Length > 0) {
+				string tableName = MappedType.Name;
+				foreach(Type arg in MappedType.GenericTypeArguments) {
+					tableName += arg.Name;
+				}
+				TableName = tableName;
+			} else {
+				TableName = MappedType.Name;
+			}
 			WithoutRowId = tableAttr != null ? tableAttr.WithoutRowId : false;
 
 			var props = new List<PropertyInfo>();
@@ -96,6 +108,7 @@ namespace SQLite
 
 			var cols = new List<Column>();
 			var manyToManys = new List<ManyToManyRelationship>();
+			var aliases = new Dictionary<string, PropertyAliasAttribute>();
 			foreach(var p in props) {
 				var isColumn = !p.IsDefined(typeof(IgnoreAttribute), true);
 				if(isColumn) {
@@ -103,10 +116,17 @@ namespace SQLite
 				}
 				else if(p.IsDefined(typeof(ManyToManyAttribute), true)) {
 					manyToManys.Add(new ManyToManyRelationship(p));
+				} else if (p.IsDefined(typeof(PropertyAliasAttribute), true)) {
+					aliases[p.Name] = p.GetCustomAttribute<PropertyAliasAttribute>();
 				}
 			}
 			ManyToManys = manyToManys.ToArray();
 			Columns = cols.ToArray();
+			Aliases = aliases.Select(kv =>
+				new PropertyAlias(
+					kv.Key,
+					Columns.FirstOrDefault(c => c.PropertyName == kv.Value.OtherProperty)))
+				.ToArray();
 			foreach(var c in Columns) {
 				if(c.IsAutoInc && c.IsPK) {
 					_autoPk = c;
@@ -146,6 +166,9 @@ namespace SQLite
 		public Column FindColumnWithPropertyName(string propertyName)
 		{
 			var exact = Columns.FirstOrDefault(c => c.PropertyName == propertyName);
+			if (exact == null) {
+				exact = Aliases.FirstOrDefault(c => c.PropertyName == propertyName)?.Column;
+			}
 			return exact;
 		}
 
@@ -153,6 +176,18 @@ namespace SQLite
 		{
 			var exact = Columns.FirstOrDefault(c => string.Equals(c.Name, columnName, StringComparison.OrdinalIgnoreCase));
 			return exact;
+		}
+
+		public class PropertyAlias
+		{
+			public string PropertyName { get; }
+			public Column Column { get; }
+
+			public PropertyAlias(string propertyName, Column column)
+			{
+				PropertyName = propertyName;
+				Column = column;
+			}
 		}
 
 		public class Column
