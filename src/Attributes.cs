@@ -96,16 +96,29 @@ namespace SQLite
 		}
 	}
 
+	public enum CascadeAction
+	{
+		NoAction, Restrict, SetNull, SetDefault, Cascade
+	}
 	[AttributeUsage(AttributeTargets.Property)]
 	public class ForeignKeyAttribute : Attribute
 	{
 		public Type TargetType { get; }
 		public string? TargetPropertyName { get; }
+		public CascadeAction? Action { get; }
 
 		public ForeignKeyAttribute(Type targetType, string? targetPropertyName = null)
 		{
 			TargetType = targetType;
 			TargetPropertyName = targetPropertyName;
+		}
+
+		public ForeignKeyAttribute(Type targetType,
+			CascadeAction action, string? targetPropertyName = null)
+		{
+			TargetType = targetType;
+			TargetPropertyName = targetPropertyName;
+			Action = action;
 		}
 	}
 

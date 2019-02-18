@@ -204,6 +204,7 @@ namespace SQLite
 			public TableMapping? ForeignTable { get; private set; }
 			public Column? ForeignColumn { get; private set; }
 			public bool IsForeignKey => ForeignTable != null;
+			public CascadeAction? ForeignCascadeAction { get; private set; }
 
 			public IEnumerable<IndexedAttribute> Indices { get; set; }
 
@@ -239,8 +240,30 @@ namespace SQLite
 						constraints.Add($"COLLATE {Collation}");
 					}
 					if(IsForeignKey) {
-						constraints.Add(
-							$@"REFERENCES ""{ForeignTable!.TableName}"" (""{ForeignColumn!.Name}"")");
+						string foreignKeyDecl = $@"REFERENCES ""{ForeignTable!.TableName}"" (""{ForeignColumn!.Name}"")";
+					
+						if(ForeignCascadeAction.HasValue) {
+							string actionDecl = "";
+							switch(ForeignCascadeAction.Value) {
+								case CascadeAction.NoAction:
+									actionDecl = "NO ACTION";
+									break;
+								case CascadeAction.SetNull:
+									actionDecl = "SET NULL";
+									break;
+								case CascadeAction.SetDefault:
+									actionDecl = "SET DEFAULT";
+									break;
+								case CascadeAction.Cascade:
+									actionDecl = "CASCADE";
+									break;
+								case CascadeAction.Restrict:
+									actionDecl = "RESTRICT";
+									break;
+							}
+							foreignKeyDecl = $"{foreignKeyDecl} ON DELETE {actionDecl} ON UPDATE {actionDecl}";
+						}
+						constraints.Add(foreignKeyDecl);
 					}
 					if (DefaultSqlValue != null) {
 						constraints.Add(@$"DEFAULT ""{DefaultSqlValue}""");
@@ -305,6 +328,7 @@ namespace SQLite
 			{
 				var foreignKeyAttr = PropertyInfo.GetCustomAttribute<ForeignKeyAttribute>();
 				if(foreignKeyAttr != null) {
+					ForeignCascadeAction = foreignKeyAttr.Action;
 					ForeignTable = config.GetTable(foreignKeyAttr.TargetType);
 					string? targetPropertyName = foreignKeyAttr.TargetPropertyName;
 					Column? otherPK = ForeignTable.PK;
