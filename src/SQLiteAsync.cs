@@ -919,8 +919,9 @@ namespace SQLite
 			where T : struct
 		{
 			return WriteAsync(conn => {
-				var command = conn.CreateCommand(query, args);
-				return command.ExecuteScalar<T>();
+				using(var command = conn.CreateCommand(query, args)) {
+					return command.ExecuteScalar<T>();
+				}
 			});
 		}
 

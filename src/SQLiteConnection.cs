@@ -462,25 +462,7 @@ namespace SQLite
 			CreateFlags createFlags = Config.CreateFlags;
 			// Create or migrate it
 			if(existingCols.Count == 0) {
-
-				// Facilitate virtual tables a.k.a. full-text search.
-				bool fts3 = createFlags.HasFlag(CreateFlags.FullTextSearch3);
-				bool fts4 = createFlags.HasFlag(CreateFlags.FullTextSearch4);
-				bool fts = fts3 || fts4;
-				var @virtual = fts ? "virtual " : string.Empty;
-				var @using = fts3 ? "using fts3 " : fts4 ? "using fts4 " : string.Empty;
-
-				// Build query.
-				var query = "create " + @virtual + "table if not exists \"" + map.TableName + "\" " + @using + "(\n";
-				var decls = map.Columns.Select(p => p.SqlDecl);
-				var decl = string.Join(",\n", decls.ToArray());
-				query += decl;
-				query += ")";
-				if(map.WithoutRowId) {
-					query += " without rowid";
-				}
-
-				Execute(query);
+				Execute(map.CreateTableSql());
 			}
 			else {
 				result = CreateTableResult.Migrated;
@@ -720,9 +702,10 @@ namespace SQLite
 		/// </returns>
 		public int Execute(string query, params object?[] args)
 		{
-			var cmd = CreateCommand(query, args);
-			var r = cmd.ExecuteNonQuery();
-			return r;
+			using(var cmd = CreateCommand(query, args)) {
+				var r = cmd.ExecuteNonQuery();
+				return r;
+			}
 		}
 
 		/// <summary>
@@ -743,9 +726,10 @@ namespace SQLite
 		/// </returns>
 		public T ExecuteScalar<T>(string query, params object[] args)
 		{
-			var cmd = CreateCommand(query, args);
-			var r = cmd.ExecuteScalar<T>();
-			return r;
+			using(var cmd = CreateCommand(query, args)) {
+				var r = cmd.ExecuteScalar<T>();
+				return r;
+			}
 		}
 
 		/// <summary>
@@ -765,8 +749,9 @@ namespace SQLite
 		/// </returns>
 		public List<T> Query<T>(string query, params object[] args) where T : new()
 		{
-			var cmd = CreateCommand(query, args);
-			return cmd.ExecuteQuery<T>();
+			using(var cmd = CreateCommand(query, args)) {
+				return cmd.ExecuteQuery<T>();
+			}
 		}
 
 		/// <summary>
@@ -789,8 +774,9 @@ namespace SQLite
 		/// </returns>
 		public IEnumerable<T> DeferredQuery<T>(string query, params object[] args) where T : new()
 		{
-			var cmd = CreateCommand(query, args);
-			return cmd.ExecuteDeferredQuery<T>();
+			using(var cmd = CreateCommand(query, args)) {
+				return cmd.ExecuteDeferredQuery<T>();
+			}
 		}
 
 		/// <summary>
@@ -815,8 +801,9 @@ namespace SQLite
 		/// </returns>
 		public List<object> Query(TableMapping map, string query, params object?[] args)
 		{
-			SQLiteStatement cmd = CreateCommand(query, args);
-			return cmd.ExecuteQuery<object>(map);
+			using(var cmd = CreateCommand(query, args)) {
+				return cmd.ExecuteQuery<object>(map);
+			}
 		}
 
 		/// <summary>
@@ -844,8 +831,9 @@ namespace SQLite
 		/// </returns>
 		public IEnumerable<object> DeferredQuery(TableMapping map, string query, params object[] args)
 		{
-			var cmd = CreateCommand(query, args);
-			return cmd.ExecuteDeferredQuery<object>(map);
+			using(var cmd = CreateCommand(query, args)) {
+				return cmd.ExecuteDeferredQuery<object>(map);
+			}
 		}
 
 		/// <summary>

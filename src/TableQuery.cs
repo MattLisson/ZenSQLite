@@ -146,10 +146,10 @@ namespace SQLite
 			var w = CompileExpr(pred, args);
 			cmdText += " where " + w.CommandText;
 
-			var command = Connection.CreateCommand(cmdText, args.ToArray());
-
-			int result = command.ExecuteNonQuery();
-			return result;
+			using(var command = Connection.CreateCommand(cmdText, args.ToArray())) {
+				int result = command.ExecuteNonQuery();
+				return result;
+			}
 		}
 
 		/// <summary>
@@ -628,7 +628,9 @@ namespace SQLite
 		/// </summary>
 		public int Count()
 		{
-			return GenerateCommand("count(*)").ExecuteScalar<int>();
+			using(var command = GenerateCommand("count(*)")) {
+				return command.ExecuteScalar<int>();
+			}
 		}
 
 		/// <summary>
@@ -642,10 +644,14 @@ namespace SQLite
 		public IEnumerator<T> GetEnumerator()
 		{
 			if(!_deferred) {
-				return GenerateCommand("*").ExecuteQuery<T>().GetEnumerator();
+				using(var command = GenerateCommand("*")) {
+					return command.ExecuteQuery<T>().GetEnumerator();
+				}
 			}
 
-			return GenerateCommand("*").ExecuteDeferredQuery<T>().GetEnumerator();
+			using(var command = GenerateCommand("*")) {
+				return command.ExecuteDeferredQuery<T>().GetEnumerator();
+			}
 		}
 
 		System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
@@ -658,7 +664,9 @@ namespace SQLite
 		/// </summary>
 		public List<T> ToList()
 		{
-			return GenerateCommand("*").ExecuteQuery<T>();
+			using(var command = GenerateCommand("*")) {
+				return command.ExecuteQuery<T>();
+			}
 		}
 
 		/// <summary>
@@ -666,7 +674,7 @@ namespace SQLite
 		/// </summary>
 		public T[] ToArray()
 		{
-			return GenerateCommand("*").ExecuteQuery<T>().ToArray();
+			return ToList().ToArray();
 		}
 
 		/// <summary>

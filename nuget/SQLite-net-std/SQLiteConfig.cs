@@ -64,9 +64,6 @@ namespace SQLite
 		/// <param name="createFlags">Flags to be used when creating tables.</param>
 		public SQLiteConfig(CreateFlags createFlags)
 		{
-			AddMigration(0, 1, connection => {
-				connection.CreateAllTables();
-			});
 			CreateFlags = createFlags;
 
 			// Set up default types;
@@ -375,7 +372,10 @@ namespace SQLite
 		public Action<SQLiteConnection> GetUpgradePath(int currentUserVersion)
 		{
 			if (currentUserVersion == 0) {
-				return connection => connection.CreateAllTables();
+				return connection => {
+					connection.CreateAllTables();
+					connection.ExecuteScalar<string>($"PRAGMA user_version = {UserVersion}");
+				};
 			}
 			List<Migration> migrationSteps = new List<Migration>();
 			int startingVersion = currentUserVersion;

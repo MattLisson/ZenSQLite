@@ -178,6 +178,41 @@ namespace SQLite
 			return exact;
 		}
 
+		public string ColumnsSql()
+		{
+			return string.Join(",\n", Columns.Select(c => c.SqlDecl));
+		}
+		public string CreateTableSql()
+		{
+			bool fts3 = CreateFlags.HasFlag(CreateFlags.FullTextSearch3);
+			bool fts4 = CreateFlags.HasFlag(CreateFlags.FullTextSearch4);
+			bool fts = fts3 || fts4;
+			string virtualDecl = fts ? "virtual" : "";
+			string ftsDecl = fts3 ? "using fts3" : fts4 ? "using fts4" : "";
+			string rowIdDecl = WithoutRowId ? "without rowid" : "";
+
+			return $@"create {virtualDecl} table if not exists ""{TableName}"" {ftsDecl} "
+				+ $@"({ColumnsSql()})"
+				+ $@"{rowIdDecl}";
+		}
+
+		public string ReCreateTableSql()
+		{
+			string tempTableName = TableName + "_Backup";
+			string columnNames = string.Join(", ", Columns.Select(c => c.Name));
+			return $@"
+			BEGIN TRANSACTION;
+			PRAGMA foreign_keys=OFF;
+			CREATE TEMPORARY TABLE ""{tempTableName}""({ColumnsSql()});
+			INSERT INTO ""{tempTableName}"" SELECT {columnNames} FROM {TableName};
+			DROP TABLE {TableName};
+			{CreateTableSql()};
+			INSERT INTO {TableName} SELECT {columnNames} FROM {tempTableName};
+			DROP TABLE {tempTableName};
+			PRAGMA foreign_keys=OFF;
+			COMMIT;";
+		}
+
 		public class PropertyAlias
 		{
 			public string PropertyName { get; }
