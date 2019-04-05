@@ -303,7 +303,7 @@ namespace SQLite
 		/// </exception>
 		public WriteColumnDelegate ColumnWriter(Type clrType)
 		{
-			if(!columnReaders.ContainsKey(clrType)) {
+			if(!columnWriters.ContainsKey(clrType)) {
 				throw new ArgumentException("Don't know how to write " + clrType);
 			}
 			return columnWriters[clrType];
@@ -381,13 +381,17 @@ namespace SQLite
 			int startingVersion = currentUserVersion;
 			while(startingVersion != UserVersion) {
 				Migration? furthestAlong = null;
-				foreach(Migration migration in migrations[startingVersion]) {
-					if (migration.endVersion > (furthestAlong?.endVersion ?? 0)) {
-						furthestAlong = migration;
+				if(migrations.ContainsKey(startingVersion)) {
+					foreach(Migration migration in migrations[startingVersion]) {
+						if(migration.endVersion > (furthestAlong?.endVersion ?? 0)) {
+							furthestAlong = migration;
+						}
 					}
 				}
 				if (furthestAlong == null) {
-					throw new NotSupportedException($"No migration found from {startingVersion}.");
+					// Try AutoMigration.
+					migrationSteps.Add(new Migration(startingVersion, UserVersion, (conn) => conn.CreateAllTables()));
+					break;
 				}
 				migrationSteps.Add(furthestAlong);
 				startingVersion = furthestAlong.endVersion;
