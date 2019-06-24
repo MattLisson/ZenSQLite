@@ -182,6 +182,7 @@ namespace SQLite
 		{
 			return string.Join(",\n", Columns.Select(c => c.SqlDecl));
 		}
+
 		public string CreateTableSql()
 		{
 			bool fts3 = CreateFlags.HasFlag(CreateFlags.FullTextSearch3);
@@ -231,7 +232,7 @@ namespace SQLite
 
 			public PropertyInfo PropertyInfo { get; }
 
-			public string PropertyName { get { return PropertyInfo.Name; } }
+			public string PropertyName => PropertyInfo.Name;
 
 			public Type ClrType { get; }
 			public string SqlType { get; }
@@ -241,7 +242,7 @@ namespace SQLite
 			public bool IsForeignKey => ForeignTable != null;
 			public CascadeAction? ForeignCascadeAction { get; private set; }
 
-			public IEnumerable<IndexedAttribute> Indices { get; set; }
+			public IEnumerable<IndexedAttribute> Indices { get; }
 
 			public bool IsPK { get; }
 
@@ -431,8 +432,9 @@ namespace SQLite
 		}
 
 
-		public void SetIds(object obj, IEnumerable ids)
+		public void SetProperty(object obj, IEnumerable ids)
 		{
+			// TODO: Either restrict the accepted property types, or create the correct type here:
 			IList correctTypeList = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(ElementType));
 			foreach(object id in ids) {
 				correctTypeList.Add(id);
@@ -440,10 +442,47 @@ namespace SQLite
 			PropertyInfo.SetValue(obj, Activator.CreateInstance(CollectionType, correctTypeList), null);
 		}
 
-		public System.Collections.IEnumerable GetIds(object obj)
+		public System.Collections.IEnumerable GetProperty(object obj)
 		{
 			return PropertyInfo.GetValue(obj, null) as System.Collections.IEnumerable
 				?? new List<object>();
+		}
+
+		public IEnumerable<object?> ReadChildren(SQLiteConnection connection, object row)
+		{
+			TableMapping table = Table;
+			object? thisKey = ThisKeyColumn.ForeignColumn!.GetProperty(row);
+			List<object> children = connection.Query(table,
+				$@"SELECT ""{OtherKeyColumn.Name}"" FROM ""{table.TableName}"" WHERE ""{ThisKeyColumn.Name}"" = ?",
+				thisKey);
+			return children.Select(child => OtherKeyColumn.GetProperty(child));
+		}
+
+		public void SetChildren(SQLiteConnection connection, object row)
+		{
+			System.Collections.IEnumerable newIds = GetProperty(row);
+			object? thisKey = ThisKeyColumn.ForeignColumn!.GetProperty(row);
+
+			List<object> relationRows = connection.Query(Table,
+				$@"SELECT * FROM ""{Table.TableName}"" WHERE ""{ThisKeyColumn.Name}"" = ?",
+				thisKey);
+			HashSet<object?> existingIds =
+				new HashSet<object?>(relationRows.Select(child => OtherKeyColumn.GetProperty(child)));
+
+			foreach(object? newId in newIds) {
+				if(existingIds.Remove(newId)) {
+					continue;
+				}
+				object newRow = Activator.CreateInstance(Table.MappedType);
+				ThisKeyColumn.SetProperty(newRow, thisKey);
+				OtherKeyColumn.SetProperty(newRow, newId);
+				connection.Insert(newRow);
+			}
+			foreach(object? childId in existingIds) {
+				connection.Execute(
+				$@"DELETE FROM ""{Table.TableName}"" WHERE ""{ThisKeyColumn.Name}"" = ? AND ""{OtherKeyColumn.Name}"" = ?",
+				thisKey, childId);
+			}
 		}
 	}
 }

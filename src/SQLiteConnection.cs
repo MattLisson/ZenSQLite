@@ -171,24 +171,18 @@ namespace SQLite
 		/// <summary>
 		/// Constructs a new SQLiteConnection and opens a SQLite database specified by databasePath.
 		/// </summary>
-		/// <param name="databasePath">
-		/// Specifies the path to the database file.
-		/// </param>
 		/// <param name="config">The database configuration.</param>
 		/// <param name="key">
 		/// Specifies the encryption key to use on the database. Should be a string or a byte[].
 		/// </param>
-		public SQLiteConnection(string databasePath, SQLiteConfig config, object? key = null)
-			: this(databasePath, config, SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create, key: key)
+		public SQLiteConnection(SQLiteConfig config, object? key = null)
+			: this(config, SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create, key: key)
 		{
 		}
 
 		/// <summary>
 		/// Constructs a new SQLiteConnection and opens a SQLite database specified by databasePath.
 		/// </summary>
-		/// <param name="databasePath">
-		/// Specifies the path to the database file.
-		/// </param>
 		/// <param name="config">The database configuration</param>
 		/// <param name="openFlags">
 		/// Flags controlling how the connection should be opened.
@@ -196,33 +190,17 @@ namespace SQLite
 		/// <param name="key">
 		/// Specifies the encryption key to use on the database. Should be a string or a byte[].
 		/// </param>
-		public SQLiteConnection(string databasePath, SQLiteConfig config, SQLiteOpenFlags openFlags, object? key = null)
+		public SQLiteConnection(SQLiteConfig config, SQLiteOpenFlags openFlags, object? key = null)
 		{
 			config.AddTable<ColumnInfo>();
 			this.Config = config;
-			if(databasePath == null) {
-				throw new ArgumentException("Must be specified", nameof(databasePath));
-			}
 
-			DatabasePath = databasePath;
+			DatabasePath = config.DatabaseFilePath;
 
 			LibVersionNumber = SQLite3.LibVersionNumber();
 
-#if NETFX_CORE
-			SQLite3.SetDirectory(/*temp directory type*/2, Windows.Storage.ApplicationData.Current.TemporaryFolder.Path);
-#endif
-
 			Sqlite3DatabaseHandle handle;
-
-#if SILVERLIGHT || USE_CSHARP_SQLITE || USE_SQLITEPCL_RAW
-			var r = SQLite3.Open(databasePath, out handle, (int)openFlags, IntPtr.Zero);
-#else
-			// open using the byte[]
-			// in the case where the path may include Unicode
-			// force open to using UTF-8 using sqlite3_open_v2
-			var databasePathAsBytes = GetNullTerminatedUtf8 (DatabasePath);
-			var r = SQLite3.Open (databasePathAsBytes, out handle, (int) openFlags, IntPtr.Zero);
-#endif
+			var r = SQLite3.Open(DatabasePath, out handle, (int)openFlags, IntPtr.Zero);
 
 			Handle = handle;
 			if(r != SQLite3.Result.OK) {
@@ -1499,6 +1477,10 @@ namespace SQLite
 					var id = SQLite3.LastInsertRowid(Handle);
 					map.SetAutoIncPK(obj, id);
 				}
+				for(int i = 0; i < map.ManyToManys.Length; i++) {
+					ManyToManyRelationship manyToMany = map.ManyToManys[i];
+					manyToMany.SetChildren(this, obj);
+				}
 			}
 			if(count > 0) {
 				OnTableChanged(map, NotifyTableChangedAction.Insert);
@@ -1630,6 +1612,10 @@ namespace SQLite
 
 			try {
 				rowsAffected = Execute(q, ps.ToArray());
+				for(int i = 0; i < map.ManyToManys.Length; i++) {
+					ManyToManyRelationship manyToMany = map.ManyToManys[i];
+					manyToMany.SetChildren(this, obj);
+				}
 			}
 			catch(SQLiteException ex) {
 

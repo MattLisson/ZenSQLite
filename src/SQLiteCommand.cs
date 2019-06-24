@@ -113,6 +113,11 @@ namespace SQLite
 					TableMapping.Column col = cols[i];
 					col.SetProperty(obj, col.ReadColumn(statement, i));
 				}
+				// TODO: Don't load ManyToMany for columns that were missing above.
+				for(int i = 0; i < map.ManyToManys.Length; i++) {
+					ManyToManyRelationship manyToMany = map.ManyToManys[i];
+					manyToMany.SetProperty(obj, manyToMany.ReadChildren(conn, obj));
+				}
 				yield return (T)obj;
 			}
 		}

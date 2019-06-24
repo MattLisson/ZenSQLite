@@ -37,16 +37,34 @@ namespace SQLite
         /// </summary>
         public int UserVersion { get; private set; } = 1;
 
-		private class Migration
+		/// <summary>
+		/// A migration action that changes database UserVersions.
+		/// </summary>
+		public class Migration
 		{
-			public int startVersion, endVersion;
-			public Action<SQLiteConnection> upgradeAction;
+			/// <summary>
+			/// The version of the database expected at the start of the upgrade action.
+			/// </summary>
+			public int StartVersion { get; }
 
-			public Migration(int startVersion, int endVersion, Action<SQLiteConnection> upgradeAction)
+			/// <summary>
+			/// The version of the database once the upgrade action has completed.
+			/// </summary>
+            public int EndVersion { get; }
+
+			/// <summary>
+			/// The action that will upgrade the database from StartVersion to EndVersion.
+			/// </summary>
+            public Action<SQLiteConnection> UpgradeAction { get; set; }
+
+			/// <summary>
+			/// Contructs a migration action with its version metadata.
+			/// </summary>
+            public Migration(int startVersion, int endVersion, Action<SQLiteConnection> upgradeAction)
 			{
-				this.startVersion = startVersion;
-				this.endVersion = endVersion;
-				this.upgradeAction = upgradeAction;
+				this.StartVersion = startVersion;
+				this.EndVersion = endVersion;
+				this.UpgradeAction = upgradeAction;
 			}
 		}
 
@@ -59,12 +77,19 @@ namespace SQLite
 		public CreateFlags CreateFlags { get; }
 
 		/// <summary>
+		/// The file path to create or open for this database.
+		/// </summary>
+		public string DatabaseFilePath { get; }
+
+		/// <summary>
 		/// Creates a new SQLiteConfig.
 		/// </summary>
 		/// <param name="createFlags">Flags to be used when creating tables.</param>
-		public SQLiteConfig(CreateFlags createFlags)
+		/// <param name="databaseFilePath">The file path to create or open the database at.</param>
+		public SQLiteConfig(CreateFlags createFlags, string databaseFilePath)
 		{
 			CreateFlags = createFlags;
+			DatabaseFilePath = databaseFilePath;
 
 			// Set up default types;
 			columnReaders[typeof(string)] =
@@ -383,7 +408,7 @@ namespace SQLite
 				Migration? furthestAlong = null;
 				if(migrations.ContainsKey(startingVersion)) {
 					foreach(Migration migration in migrations[startingVersion]) {
-						if(migration.endVersion > (furthestAlong?.endVersion ?? 0)) {
+						if(migration.EndVersion > (furthestAlong?.EndVersion ?? 0)) {
 							furthestAlong = migration;
 						}
 					}
@@ -394,14 +419,14 @@ namespace SQLite
 					break;
 				}
 				migrationSteps.Add(furthestAlong);
-				startingVersion = furthestAlong.endVersion;
+				startingVersion = furthestAlong.EndVersion;
 			}
 
 			return (connection) => {
 				connection.BeginTransaction();
 				foreach(Migration migration in migrationSteps) {
-					migration.upgradeAction(connection);
-					connection.ExecuteScalar<string>($"PRAGMA user_version = {migration.endVersion}");
+					migration.UpgradeAction(connection);
+					connection.ExecuteScalar<string>($"PRAGMA user_version = {migration.EndVersion}");
 				}
 				connection.Commit();
 			};
