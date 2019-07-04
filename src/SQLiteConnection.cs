@@ -573,7 +573,8 @@ namespace SQLite
 			var propName = propertyInfo.Name;
 
 			var map = GetMapping<T>();
-			var colName = map.FindColumnWithPropertyName(propName).Name;
+			var colName = map.FindColumnWithPropertyName(propName)?.Name
+				?? throw new ArgumentException($"Table({map.TableName}) doesn't have a property named: {propName}");
 
 			return CreateIndex(map.TableName, colName, unique);
 		}

@@ -163,9 +163,9 @@ namespace SQLite
 			_autoPk?.SetProperty(obj, Convert.ChangeType(id, _autoPk.ClrType, null));
 		}
 
-		public Column FindColumnWithPropertyName(string propertyName)
+		public Column? FindColumnWithPropertyName(string propertyName)
 		{
-			var exact = Columns.FirstOrDefault(c => c.PropertyName == propertyName);
+			Column? exact = Columns.FirstOrDefault(c => c.PropertyName == propertyName);
 			if (exact == null) {
 				exact = Aliases.FirstOrDefault(c => c.PropertyName == propertyName)?.Column;
 			}
@@ -427,8 +427,10 @@ namespace SQLite
 		{
 			var attribute = PropertyInfo.GetCustomAttribute<ManyToManyAttribute>();
 			Table = config.GetTable(attribute.RelationshipType);
-			ThisKeyColumn = Table.FindColumnWithPropertyName(attribute.ThisKeyProperty);
-			OtherKeyColumn = Table.FindColumnWithPropertyName(attribute.OtherKeyProperty);
+			ThisKeyColumn = Table.FindColumnWithPropertyName(attribute.ThisKeyProperty)
+				?? throw new ArgumentException($"Relationship class didn't have column named: {attribute.ThisKeyProperty}");
+			OtherKeyColumn = Table.FindColumnWithPropertyName(attribute.OtherKeyProperty)
+				?? throw new ArgumentException($"Relationship class didn't have column named: {attribute.OtherKeyProperty}");
 		}
 
 

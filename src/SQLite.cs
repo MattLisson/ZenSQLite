@@ -55,7 +55,7 @@ namespace SQLite
 			return p.CustomAttributes.Any(x => x.AttributeType == typeof(PrimaryKeyAttribute));
 		}
 
-		public static string Collation(MemberInfo p)
+		public static string? Collation(MemberInfo p)
 		{
 			return p.GetCustomAttribute<CollationAttribute>()?.Value;
 		}

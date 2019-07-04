@@ -141,7 +141,7 @@ namespace SQLite
 				pred = pred != null ? Expression.AndAlso(pred, lambda.Body) : lambda.Body;
 			}
 
-			var args = new List<object>();
+			var args = new List<object?>();
 			var cmdText = "delete from \"" + Table.TableName + "\"";
 			var w = CompileExpr(pred, args);
 			cmdText += " where " + w.CommandText;
@@ -241,7 +241,8 @@ namespace SQLite
 						q._orderBys = new List<Ordering>();
 					}
 					q._orderBys.Add(new Ordering(
-						Table.FindColumnWithPropertyName(mem.Member.Name).Name,
+						Table.FindColumnWithPropertyName(mem.Member.Name)?.Name
+						  ?? throw new ArgumentException($"Table({Table.TableName}) doesn't have property named {mem.Member.Name}"),
 						asc));
 					return q;
 				}
@@ -299,7 +300,7 @@ namespace SQLite
 			}
 			else {
 				var cmdText = "select " + selectionList + " from \"" + Table.TableName + "\"";
-				var args = new List<object>();
+				var args = new List<object?>();
 				if(_where != null) {
 					var w = CompileExpr(_where, args);
 					cmdText += " where " + w.CommandText;
@@ -333,7 +334,7 @@ namespace SQLite
 			}
 		}
 
-		private CompileResult CompileExpr(Expression? expr, List<object> queryArgs)
+		private CompileResult CompileExpr(Expression? expr, List<object?> queryArgs)
 		{
 			if(expr == null) {
 				throw new NotSupportedException("Expression is NULL");
@@ -410,7 +411,7 @@ namespace SQLite
 				else if(call.Method.Name == "StartsWith" && args.Length >= 1) {
 					var startsWithCmpOp = StringComparison.CurrentCulture;
 					if(args.Length == 2) {
-						startsWithCmpOp = (StringComparison)args[1].Value;
+						startsWithCmpOp = (StringComparison)args[1].Value!;
 					}
 					switch(startsWithCmpOp) {
 						case StringComparison.Ordinal:
@@ -427,7 +428,7 @@ namespace SQLite
 				else if(call.Method.Name == "EndsWith" && args.Length >= 1) {
 					var endsWithCmpOp = StringComparison.CurrentCulture;
 					if(args.Length == 2) {
-						endsWithCmpOp = (StringComparison)args[1].Value;
+						endsWithCmpOp = (StringComparison)args[1].Value!;
 					}
 					switch(endsWithCmpOp) {
 						case StringComparison.Ordinal:
@@ -487,7 +488,8 @@ namespace SQLite
 					// This is a column of our table, output just the column name
 					// Need to translate it if that column name is mapped
 					//
-					var columnName = Table.FindColumnWithPropertyName(mem.Member.Name).Name;
+					var columnName = Table.FindColumnWithPropertyName(mem.Member.Name)?.Name
+						?? throw new ArgumentException($"Table({Table.TableName}) doesn't have property named {mem.Member.Name}");
 					return new CompileResult("\"" + columnName + "\"" );
 				}
 				else {
