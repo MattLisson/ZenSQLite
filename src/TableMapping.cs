@@ -73,7 +73,7 @@ namespace SQLite
 
 			string? explicitName = tableAttr?.Name;
 			if (!string.IsNullOrEmpty(explicitName)) {
-				TableName = explicitName;
+				TableName = explicitName!;
 			} else if (MappedType.GenericTypeArguments.Length > 0) {
 				string tableName = MappedType.Name;
 				foreach(Type arg in MappedType.GenericTypeArguments) {

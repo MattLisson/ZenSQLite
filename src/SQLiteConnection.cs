@@ -1106,7 +1106,7 @@ namespace SQLite
 					}
 				}
 				else {
-					DoSavePointExecute(savepoint, "rollback to ");
+					DoSavePointExecute(savepoint!, "rollback to ");
 				}
 			}
 			catch(SQLiteException) {
@@ -1829,6 +1829,6 @@ namespace SQLite
 			}
 		}
 
-		public event EventHandler<NotifyTableChangedEventArgs> TableChanged;
+		public event EventHandler<NotifyTableChangedEventArgs>? TableChanged;
 	}
 }

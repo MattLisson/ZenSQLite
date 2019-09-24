@@ -8,7 +8,7 @@
     <Description>Light weight library providing easy SQLite database storage</Description>
     <Company>Krueger Systems, Inc.</Company>
     <LangVersion>8.0</LangVersion>
-    <NullableContextOptions>enable</NullableContextOptions>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
