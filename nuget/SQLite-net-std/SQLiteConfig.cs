@@ -117,7 +117,7 @@ namespace SQLite
 			columnReaders[typeof(sbyte)] =
 				NullHandlingReader((s, i) => (sbyte)SQLite3.ColumnInt(s, i));
 			columnReaders[typeof(byte[])] =
-				NullHandlingReader((s, i) => SQLite3.ColumnByteArray(s, i));
+				NullHandlingReader((s, i) => SQLite3.ColumnByteArray(s, i).ToArray());
 			columnReaders[typeof(Guid)] =
 				NullHandlingReader((s, i) => new Guid(SQLite3.ColumnString(s, i)));
 

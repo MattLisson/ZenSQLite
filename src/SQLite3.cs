@@ -191,7 +191,7 @@ namespace SQLite
 
 		public static string GetErrmsg(Sqlite3DatabaseHandle db)
 		{
-			return Sqlite3.sqlite3_errmsg(db);
+			return Sqlite3.sqlite3_errmsg(db).utf8_to_string();
 		}
 
 		public static int BindParameterIndex(Sqlite3StatementHandle statement, string name)
@@ -241,12 +241,12 @@ namespace SQLite
 
 		public static string ColumnName(Sqlite3StatementHandle statement, int index)
 		{
-			return Sqlite3.sqlite3_column_name(statement, index);
+			return Sqlite3.sqlite3_column_name(statement, index).utf8_to_string();
 		}
 
 		public static string ColumnName16(Sqlite3StatementHandle statement, int index)
 		{
-			return Sqlite3.sqlite3_column_name(statement, index);
+			return Sqlite3.sqlite3_column_name(statement, index).utf8_to_string();
 		}
 
 		public static ColType ColumnType(Sqlite3StatementHandle statement, int index)
@@ -271,15 +271,15 @@ namespace SQLite
 
 		public static string ColumnText(Sqlite3StatementHandle statement, int index)
 		{
-			return Sqlite3.sqlite3_column_text(statement, index);
+			return Sqlite3.sqlite3_column_text(statement, index).utf8_to_string();
 		}
 
 		public static string ColumnText16(Sqlite3StatementHandle statement, int index)
 		{
-			return Sqlite3.sqlite3_column_text(statement, index);
+			return Sqlite3.sqlite3_column_text(statement, index).utf8_to_string();
 		}
 
-		public static byte[] ColumnBlob(Sqlite3StatementHandle statement, int index)
+		public static System.ReadOnlySpan<byte> ColumnBlob(Sqlite3StatementHandle statement, int index)
 		{
 			return Sqlite3.sqlite3_column_blob(statement, index);
 		}
@@ -291,10 +291,10 @@ namespace SQLite
 
 		public static string ColumnString(Sqlite3StatementHandle statement, int index)
 		{
-			return Sqlite3.sqlite3_column_text(statement, index);
+			return Sqlite3.sqlite3_column_text(statement, index).utf8_to_string();
 		}
 
-		public static byte[] ColumnByteArray(Sqlite3StatementHandle statement, int index)
+		public static ReadOnlySpan<byte> ColumnByteArray(Sqlite3StatementHandle statement, int index)
 		{
 			int length = ColumnBytes(statement, index);
 			if(length > 0) {
