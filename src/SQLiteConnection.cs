@@ -1452,7 +1452,7 @@ namespace SQLite
 
 			var replacing = string.Compare(extra, "OR REPLACE", StringComparison.OrdinalIgnoreCase) == 0;
 
-			var cols = replacing ? map.InsertOrReplaceColumns : map.InsertColumns;
+			var cols = replacing ? map.Columns : map.InsertColumns;
 			var vals = new object?[cols.Length];
 			for(var i = 0; i < vals.Length; i++) {
 				vals[i] = cols[i].GetProperty(obj);
@@ -1530,7 +1530,7 @@ namespace SQLite
 				var replacing = string.Compare(extra, "OR REPLACE", StringComparison.OrdinalIgnoreCase) == 0;
 
 				if(replacing) {
-					cols = map.InsertOrReplaceColumns;
+					cols = map.Columns;
 				}
 
 				insertSql = string.Format(@"insert {3} into ""{0}""({1}) values ({2})", map.TableName,

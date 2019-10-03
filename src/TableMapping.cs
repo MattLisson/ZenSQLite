@@ -53,8 +53,6 @@ namespace SQLite
 
 		public Column[] InsertColumns { get; }
 
-		public Column[] InsertOrReplaceColumns { get; }
-
 		public ManyToManyRelationship[] ManyToManys { get; }
 
 
@@ -145,7 +143,6 @@ namespace SQLite
 			}
 
 			InsertColumns = Columns.Where(c => !c.IsAutoInc).ToArray();
-			InsertOrReplaceColumns = Columns.ToArray();
 		}
 
 		public void WireForeignKeys(SQLiteConfig config)
