@@ -175,6 +175,16 @@ namespace SQLite
 			return exact;
 		}
 
+		public void MaybeUpdateAutoIncPK(object obj)
+		{
+			TableMapping.Column? pk = PK;
+			if(pk != null && pk.IsAutoGuid) {
+				if(Equals(pk.GetProperty(obj), Guid.Empty)) {
+					pk.SetProperty(obj, Guid.NewGuid());
+				}
+			}
+		}
+
 		public string ColumnsSql()
 		{
 			return string.Join(",\n", Columns.Select(c => c.SqlDecl));

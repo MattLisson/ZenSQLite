@@ -1469,12 +1469,7 @@ namespace SQLite
 			}
 
 			var map = GetMapping(objType);
-			TableMapping.Column? pk = map.PK;
-			if(pk != null && pk.IsAutoGuid) {
-				if(Equals(pk.GetProperty(obj), Guid.Empty)) {
-					pk.SetProperty(obj, Guid.NewGuid());
-				}
-			}
+			map.MaybeUpdateAutoIncPK(obj);
 
 			var replacing = string.Compare(extra, "OR REPLACE", StringComparison.OrdinalIgnoreCase) == 0;
 
