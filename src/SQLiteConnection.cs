@@ -620,7 +620,7 @@ namespace SQLite
 		public List<ColumnInfo> GetTableInfo(string tableName)
 		{
 			var query = "pragma table_info(\"" + tableName + "\")";
-			return Query<ColumnInfo>(query);
+			return Query<ColumnInfo>(ColumnInfoMapping, query);
 		}
 
 		void MigrateTable(TableMapping map, List<ColumnInfo> existingCols)
@@ -679,22 +679,20 @@ namespace SQLite
 		/// <param name="cmdText">
 		/// The fully escaped SQL.
 		/// </param>
-		/// <param name="ps">
-		/// Arguments to substitute for the occurences of '?' in the command text.
+		/// <param name="explicitMapping">
+		/// The table mapping to use if T isn't already in the SQLiteConfig.
 		/// </param>
 		/// <returns>
 		/// A <see cref="SQLiteStatement"/>
 		/// </returns>
-		public SQLiteStatement<T> CreateStatement<T>(string cmdText, params object?[] ps)
+		public SQLiteStatement<T> CreateStatement<T>(string cmdText, TableMapping? explicitMapping = null)
 		{
 			if(!_open) {
 				throw SQLiteException.New(SQLite3.Result.Error, "Cannot create commands from unopened database");
 			}
+			TableMapping table = explicitMapping ?? GetMapping(typeof(T));
 			
-			var cmd = new SQLiteStatement<T>(this, GetMapping(typeof(T)), cmdText);
-			for(int i = 0; i < ps.Length; i++) {
-				cmd.Bind(i + 1, ps[i]);
-			}
+			var cmd = new SQLiteStatement<T>(this, table, cmdText);
 			return cmd;
 		}
 
@@ -764,7 +762,7 @@ namespace SQLite
 		/// </returns>
 		public List<T> Query<T>(string query, params object[] args) where T : new()
 		{
-			using(var cmd = CreateStatement<T>(query, args)) {
+			using(var cmd = CreateStatement<T>(query).Bind(args)) {
 				return cmd.ExecuteQuery().ToList();
 			}
 		}
@@ -789,7 +787,7 @@ namespace SQLite
 		/// </returns>
 		public IEnumerable<T> DeferredQuery<T>(string query, params object[] args) where T : new()
 		{
-			using(var cmd = CreateStatement<T>(query, args)) {
+			using(var cmd = CreateStatement<T>(query).Bind(args)) {
 				return cmd.ExecuteQuery();
 			}
 		}
@@ -818,6 +816,13 @@ namespace SQLite
 		{
 			using(var cmd = CreateCommand(query, args)) {
 				return cmd.ExecuteQuery<object>(map);
+			}
+		}
+
+		public List<T> Query<T>(TableMapping map, string query, params object?[] args)
+		{
+			using(var cmd = CreateStatement<T>(query, map).Bind(args)) {
+				return cmd.ExecuteQuery().ToList();
 			}
 		}
 

@@ -104,7 +104,14 @@ namespace SQLite
 			Type type = val?.GetType() ?? typeof(int);
 			var writer = conn.Config.ColumnWriter(type);
 			writer(statement, index, val);
+		}
 
+		public SQLiteStatement<T> Bind(params object?[] ps)
+		{
+			for(int i = 0; i < ps.Length; i++) {
+				Bind(i + 1, ps[i]);
+			}
+			return this;
 		}
 
 		public override string ToString()
