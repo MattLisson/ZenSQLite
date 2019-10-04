@@ -102,6 +102,7 @@ namespace SQLite
 		Insert,
 		Update,
 		Delete,
+		Upsert,
 	}
 	public enum CreateTableResult
 	{
@@ -162,6 +163,8 @@ namespace SQLite
 		/// </summary>
 		/// <value>The tracer.</value>
 		public Action<string> Tracer { get; set; }
+
+		private TableMapping ColumnInfoMapping { get; }
 		
 		static SQLiteConnection()
 		{
@@ -192,8 +195,9 @@ namespace SQLite
 		/// </param>
 		public SQLiteConnection(SQLiteConfig config, SQLiteOpenFlags openFlags, object? key = null)
 		{
-			config.AddTable<ColumnInfo>();
 			this.Config = config;
+
+			ColumnInfoMapping = new TableMapping(typeof(ColumnInfo), config);
 
 			DatabasePath = config.DatabaseFilePath;
 
@@ -480,6 +484,12 @@ namespace SQLite
 			}
 
 			return result;
+		}
+
+		public void AddColumn(TableMapping table, TableMapping.Column column)
+		{
+			var addCol = $@"alter table ""{table.TableName}"" add column {column.SqlDecl}";
+			Execute(addCol);
 		}
 
 		/// <summary>
@@ -1564,6 +1574,54 @@ namespace SQLite
 
 			var insertCommand = new SQLiteInsertStatement(this, insertSql);
 			return insertCommand;
+		}
+
+		/// <summary>
+		/// Inserts the given object (and updates its
+		/// auto incremented primary key if it has one).
+		/// The return value is the number of rows added to the table.
+		/// </summary>
+		/// <param name="obj">
+		/// The object to insert.
+		/// </param>
+		public void Upsert(object obj)
+		{
+			Type objType = Orm.GetType(obj);
+			if(obj == null || objType == null) {
+				return;
+			}
+
+			TableMapping map = GetMapping(objType);
+			map.MaybeUpdateAutoIncPK(obj);
+
+			var upsertStatement = new SQLiteUpsertStatement(this, map);
+			int count;
+
+			lock(upsertStatement) {
+				// We lock here to protect the prepared statement returned via GetInsertCommand.
+				// A SQLite prepared statement can be bound for only one operation at a time.
+				try {
+					count = upsertStatement.Execute(obj);
+				}
+				catch(SQLiteException ex) {
+					if(SQLite3.ExtendedErrCode(Handle) == SQLite3.ExtendedResult.ConstraintNotNull) {
+						throw NotNullConstraintViolationException.New(ex.Result, ex.Message, map, obj);
+					}
+					throw;
+				}
+				
+				if(map.HasAutoIncPK) {
+					var id = SQLite3.LastInsertRowid(Handle);
+					map.SetAutoIncPK(obj, id);
+				}
+				for(int i = 0; i < map.ManyToManys.Length; i++) {
+					ManyToManyRelationship manyToMany = map.ManyToManys[i];
+					manyToMany.WriteChildren(this, obj);
+				}
+			}
+			if(count > 0) {
+				OnTableChanged(map, NotifyTableChangedAction.Upsert);
+			}
 		}
 
 		/// <summary>
