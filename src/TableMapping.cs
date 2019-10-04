@@ -391,7 +391,7 @@ namespace SQLite
 				return ReadColumnFunc(statement, index);
 			}
 
-			public void WriteColumn(Sqlite3StatementHandle statement, int index, object value)
+			public void WriteColumn(Sqlite3StatementHandle statement, int index, object? value)
 			{
 				WriteColumnFunc(statement, index, value);
 			}
