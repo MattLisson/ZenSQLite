@@ -663,6 +663,32 @@ namespace SQLite
 		}
 
 		/// <summary>
+		/// Creates a new SQLiteStatement given the command text with arguments. Place a '?'
+		/// in the command text for each of the arguments.
+		/// </summary>
+		/// <param name="cmdText">
+		/// The fully escaped SQL.
+		/// </param>
+		/// <param name="ps">
+		/// Arguments to substitute for the occurences of '?' in the command text.
+		/// </param>
+		/// <returns>
+		/// A <see cref="SQLiteStatement"/>
+		/// </returns>
+		public SQLiteStatement<T> CreateStatement<T>(string cmdText, params object?[] ps)
+		{
+			if(!_open) {
+				throw SQLiteException.New(SQLite3.Result.Error, "Cannot create commands from unopened database");
+			}
+			
+			var cmd = new SQLiteStatement<T>(this, GetMapping(typeof(T)), cmdText);
+			for(int i = 0; i < ps.Length; i++) {
+				cmd.Bind(i + 1, ps[i]);
+			}
+			return cmd;
+		}
+
+		/// <summary>
 		/// Creates a SQLiteCommand given the command text (SQL) with arguments. Place a '?'
 		/// in the command text for each of the arguments and then executes that command.
 		/// Use this method instead of Query when you don't expect rows back. Such cases include
@@ -728,8 +754,8 @@ namespace SQLite
 		/// </returns>
 		public List<T> Query<T>(string query, params object[] args) where T : new()
 		{
-			using(var cmd = CreateCommand(query, args)) {
-				return cmd.ExecuteQuery<T>();
+			using(var cmd = CreateStatement<T>(query, args)) {
+				return cmd.ExecuteQuery().ToList();
 			}
 		}
 
@@ -753,8 +779,8 @@ namespace SQLite
 		/// </returns>
 		public IEnumerable<T> DeferredQuery<T>(string query, params object[] args) where T : new()
 		{
-			using(var cmd = CreateCommand(query, args)) {
-				return cmd.ExecuteDeferredQuery<T>();
+			using(var cmd = CreateStatement<T>(query, args)) {
+				return cmd.ExecuteQuery();
 			}
 		}
 
