@@ -1501,7 +1501,7 @@ namespace SQLite
 				}
 				for(int i = 0; i < map.ManyToManys.Length; i++) {
 					ManyToManyRelationship manyToMany = map.ManyToManys[i];
-					manyToMany.SetChildren(this, obj);
+					manyToMany.WriteChildren(this, obj);
 				}
 			}
 			if(count > 0) {
@@ -1636,7 +1636,7 @@ namespace SQLite
 				rowsAffected = Execute(q, ps.ToArray());
 				for(int i = 0; i < map.ManyToManys.Length; i++) {
 					ManyToManyRelationship manyToMany = map.ManyToManys[i];
-					manyToMany.SetChildren(this, obj);
+					manyToMany.WriteChildren(this, obj);
 				}
 			}
 			catch(SQLiteException ex) {

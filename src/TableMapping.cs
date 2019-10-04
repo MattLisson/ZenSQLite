@@ -467,7 +467,7 @@ namespace SQLite
 			return children.Select(child => OtherKeyColumn.GetProperty(child));
 		}
 
-		public void SetChildren(SQLiteConnection connection, object row)
+		public void WriteChildren(SQLiteConnection connection, object row)
 		{
 			System.Collections.IEnumerable newIds = GetProperty(row);
 			object? thisKey = ThisKeyColumn.ForeignColumn!.GetProperty(row);
