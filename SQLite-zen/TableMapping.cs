@@ -435,9 +435,9 @@ namespace SQLite
 			var attribute = PropertyInfo.GetCustomAttribute<ManyToManyAttribute>();
 			Table = config.GetTable(attribute.RelationshipType);
 			ThisKeyColumn = Table.FindColumnWithPropertyName(attribute.ThisKeyProperty)
-				?? throw new ArgumentException($"Relationship class didn't have column named: {attribute.ThisKeyProperty}");
+				?? throw new ArgumentException($"Relationship class didn't have property named: {attribute.ThisKeyProperty}");
 			OtherKeyColumn = Table.FindColumnWithPropertyName(attribute.OtherKeyProperty)
-				?? throw new ArgumentException($"Relationship class didn't have column named: {attribute.OtherKeyProperty}");
+				?? throw new ArgumentException($"Relationship class didn't have property named: {attribute.OtherKeyProperty}");
 		}
 
 
