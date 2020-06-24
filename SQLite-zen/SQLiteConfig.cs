@@ -214,6 +214,9 @@ namespace SQLite
 				foreach(var table in mappings.Values) {
 					table.WireForeignKeys(this);
 				}
+				foreach(var table in mappings.Values) {
+					table.WireManyToManys(this);
+				}
 			}
 			return this;
 		}

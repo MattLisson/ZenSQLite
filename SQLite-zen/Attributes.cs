@@ -130,13 +130,16 @@ namespace SQLite
 		public string ThisKeyProperty { get; }
 		public string OtherKeyProperty { get; }
 
+		public string? OrderProperty { get; }
+
 		public ManyToManyAttribute(Type targetType, Type relationshipType,
-			string thisKeyProperty, string otherKeyProperty)
+			string thisKeyProperty, string otherKeyProperty, string? orderProperty = null)
 		{
 			TargetType = targetType;
 			RelationshipType = relationshipType;
 			ThisKeyProperty = thisKeyProperty;
 			OtherKeyProperty = otherKeyProperty;
+			OrderProperty = orderProperty;
 		}
 	}
 

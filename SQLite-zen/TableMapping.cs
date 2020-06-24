@@ -150,6 +150,10 @@ namespace SQLite
 			foreach(Column col in Columns) {
 				col.WireForeignKeys(config);
 			}
+		}
+
+		public void WireManyToManys(SQLiteConfig config)
+		{
 			foreach(ManyToManyRelationship manyToMany in ManyToManys) {
 				manyToMany.WireForeignKeys(config);
 			}
@@ -377,11 +381,16 @@ namespace SQLite
 					Column? otherPK = ForeignTable.PK;
 					if(targetPropertyName != null) {
 						ForeignColumn = ForeignTable.FindColumnWithPropertyName(targetPropertyName);
+
 					} else if (otherPK != null) {
 						ForeignColumn = otherPK;
 					} else {
 						throw new ArgumentException("Foreign Key Target Property must be provided when" +
 							" the other table has no Primary Key");
+					}
+					if(ForeignColumn == null) {
+						throw new ArgumentException(
+							$"Couldn't find column referenced by foreign key: {foreignKeyAttr}");
 					}
 				}
 			}
@@ -413,6 +422,7 @@ namespace SQLite
 		public TableMapping Table { get; private set; }
 		public TableMapping.Column ThisKeyColumn { get; private set; }
 		public TableMapping.Column OtherKeyColumn { get; private set; }
+		public TableMapping.Column? OrderColumn { get; private set; }
 		public PropertyInfo PropertyInfo { get; }
 
 		private Type CollectionType { get; }
@@ -436,8 +446,22 @@ namespace SQLite
 			Table = config.GetTable(attribute.RelationshipType);
 			ThisKeyColumn = Table.FindColumnWithPropertyName(attribute.ThisKeyProperty)
 				?? throw new ArgumentException($"Relationship class didn't have property named: {attribute.ThisKeyProperty}");
+			if (ThisKeyColumn.ForeignColumn == null) {
+				throw new ArgumentException(
+					$"Column pointing to parent row doesn't have ForeignKey attribute: {ThisKeyColumn}");
+			}
+			
 			OtherKeyColumn = Table.FindColumnWithPropertyName(attribute.OtherKeyProperty)
 				?? throw new ArgumentException($"Relationship class didn't have property named: {attribute.OtherKeyProperty}");
+			if(OtherKeyColumn.ForeignColumn == null) {
+				throw new ArgumentException(
+					$"Column pointing to child row doesn't have ForeignKey attribute: {OtherKeyColumn}");
+			}
+
+			if (attribute.OrderProperty != null) {
+				OrderColumn = Table.FindColumnWithPropertyName(attribute.OrderProperty)
+					?? throw new ArgumentException($"Relationship table doesn't have requested order column: {attribute.OrderProperty}");
+			}
 		}
 
 
@@ -461,30 +485,53 @@ namespace SQLite
 		{
 			TableMapping table = Table;
 			object? thisKey = ThisKeyColumn.ForeignColumn!.GetProperty(row);
+			string orderClause = "";
+			if (OrderColumn != null) {
+				orderClause = $@"ORDER BY ""{OrderColumn.Name}"" ASC";
+			}
 			List<object> children = connection.Query(table,
-				$@"SELECT ""{OtherKeyColumn.Name}"" FROM ""{table.TableName}"" WHERE ""{ThisKeyColumn.Name}"" = ?",
+				$@"SELECT ""{OtherKeyColumn.Name}"" FROM ""{table.TableName}"" WHERE ""{ThisKeyColumn.Name}"" = ? {orderClause}",
 				thisKey);
 			return children.Select(child => OtherKeyColumn.GetProperty(child));
 		}
 
 		public void WriteChildren(SQLiteConnection connection, object row)
 		{
-			System.Collections.IEnumerable newIds = GetProperty(row);
+			string savepoint = connection.SaveTransactionPoint();
+			IEnumerable newIds = GetProperty(row);
 			object? thisKey = ThisKeyColumn.ForeignColumn!.GetProperty(row);
 
 			List<object> relationRows = connection.Query(Table,
 				$@"SELECT * FROM ""{Table.TableName}"" WHERE ""{ThisKeyColumn.Name}"" = ?",
 				thisKey);
-			HashSet<object?> existingIds =
-				new HashSet<object?>(relationRows.Select(child => OtherKeyColumn.GetProperty(child)));
+			Dictionary<object, object> existingIds = relationRows.ToDictionary(child => OtherKeyColumn.GetProperty(child)!);
 
+			int orderIndex = -1;
 			foreach(object? newId in newIds) {
-				if(existingIds.Remove(newId)) {
+				orderIndex++;
+				if(existingIds.ContainsKey(newId)) {
+					object relation = existingIds[newId];
+					if(OrderColumn != null) {
+						int existingOrderIndex = (int)(OrderColumn.GetProperty(relation) ?? 0);
+						if (orderIndex != existingOrderIndex) {
+							OrderColumn.SetProperty(relation, orderIndex);
+							connection.Execute(
+								$@"UPDATE ""{Table.TableName}""
+  SET ""{OrderColumn.Name}"" = ?
+  WHERE ""{ThisKeyColumn.Name}"" = ?
+    AND ""{OtherKeyColumn.Name}"" = ?",
+								orderIndex, thisKey, newId);
+						}
+					}
+					existingIds.Remove(newId);
 					continue;
 				}
 				object newRow = Activator.CreateInstance(Table.MappedType);
 				ThisKeyColumn.SetProperty(newRow, thisKey);
 				OtherKeyColumn.SetProperty(newRow, newId);
+				if (OrderColumn != null) {
+					OrderColumn.SetProperty(newRow, orderIndex);
+				}
 				connection.Insert(newRow);
 			}
 			foreach(object? childId in existingIds) {
@@ -492,6 +539,7 @@ namespace SQLite
 				$@"DELETE FROM ""{Table.TableName}"" WHERE ""{ThisKeyColumn.Name}"" = ? AND ""{OtherKeyColumn.Name}"" = ?",
 				thisKey, childId);
 			}
+			connection.Release(savepoint);
 		}
 	}
 }
