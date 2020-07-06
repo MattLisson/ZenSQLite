@@ -167,13 +167,17 @@ namespace SQLite
 		/// <returns></returns>
 		public SQLiteConfig AddTable(Type type)
 		{
+			return AddTable(type, null);
+		}
+
+		private SQLiteConfig AddTable(Type type, int? userVersionFilter) {
 			TableMapping map;
 			var key = type.FullName;
 			lock(mappings) {
 				if(mappings.ContainsKey(key)) {
 					throw new ArgumentException($"A mapping for {key} already exists!");
 				}
-				map = new TableMapping(type, this);
+				map = new TableMapping(type, this, userVersionFilter);
 				mappings[key] = map;
 			}
 			return this;
@@ -397,12 +401,14 @@ namespace SQLite
 		/// </summary>
 		/// <param name="currentUserVersion">The current version of the database.</param>
 		/// <returns>A function that will upgrade the database to UserVersion from this config.</returns>
-		public Action<SQLiteConnection> GetUpgradePath(int currentUserVersion)
+		public List<Migration> GetUpgradePath(int currentUserVersion)
 		{
-			if (currentUserVersion == 0) {
-				return connection => {
-					connection.CreateAllTables();
-					connection.ExecuteScalar<string>($"PRAGMA user_version = {UserVersion}");
+			if(currentUserVersion == 0) {
+				return new List<Migration> {
+					new Migration(0, UserVersion, connection => {
+						connection.CreateAllTables();
+						connection.ExecuteScalar<string>($"PRAGMA user_version = {UserVersion}");
+					})
 				};
 			}
 			List<Migration> migrationSteps = new List<Migration>();
@@ -424,15 +430,26 @@ namespace SQLite
 				migrationSteps.Add(furthestAlong);
 				startingVersion = furthestAlong.EndVersion;
 			}
+			return migrationSteps;
+		}
 
-			return (connection) => {
-				connection.BeginTransaction();
-				foreach(Migration migration in migrationSteps) {
-					migration.UpgradeAction(connection);
-					connection.ExecuteScalar<string>($"PRAGMA user_version = {migration.EndVersion}");
+		public SQLiteConfig GetConfigAtVersion(int userVersion)
+		{
+			SQLiteConfig config = new SQLiteConfig(CreateFlags, DatabaseFilePath);
+			config.SetUserVersion(userVersion);
+			foreach(var type in sqlTypeOverrides.Keys) {
+				config.sqlTypeOverrides[type] = sqlTypeOverrides[type];
+				config.columnReaders[type] = columnReaders[type];
+				config.columnWriters[type] = columnWriters[type];
+			}
+			foreach(TableMapping table in mappings.Values) {
+				if (table.UserVersionAdded <= userVersion) {
+					config.AddTable(table.MappedType, userVersion);
 				}
-				connection.Commit();
-			};
+			}
+			config.WireForeignKeys();
+			// Don't include migrations.
+			return config;
 		}
 	}
 }

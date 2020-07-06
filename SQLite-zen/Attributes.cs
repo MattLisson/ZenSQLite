@@ -206,5 +206,20 @@ namespace SQLite
 	{
 	}
 
+	[AttributeUsage(AttributeTargets.Property | AttributeTargets.Class)]
+	public class UserVersionAttribute : Attribute
+	{
+		public int UserVersion { get; set; }
+
+		public UserVersionAttribute()
+		{
+		}
+
+		public UserVersionAttribute(int userVersion)
+		{
+			UserVersion = userVersion;
+		}
+	}
+
 
 }

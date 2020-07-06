@@ -129,7 +129,7 @@ namespace SQLite
 	{
 		private bool _open;
 		private TimeSpan _busyTimeout;
-        public SQLiteConfig Config { get; }
+        public SQLiteConfig Config { get; private set; }
 
         private int _transactionDepth = 0;
 		private Random _rand = new Random();
@@ -237,7 +237,17 @@ namespace SQLite
 				throw new NotSupportedException(
 					$"Can not downgrade database from version({currentUserVersion}) to version({newUserVersion}");
 			} else {
-				config.GetUpgradePath(currentUserVersion)(this);
+				List<SQLiteConfig.Migration> migrations =
+					config.GetUpgradePath(currentUserVersion);
+				string savepoint = SaveTransactionPoint();
+				SQLiteConfig finalConfig = Config;
+				foreach(SQLiteConfig.Migration migration in migrations) {
+					Config = finalConfig.GetConfigAtVersion(migration.EndVersion);
+					migration.UpgradeAction(this);
+					ExecuteScalar<string>($"PRAGMA user_version = {migration.EndVersion}");
+				}
+				Config = finalConfig;
+				Release(savepoint);
 			}
 		}
 

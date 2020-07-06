@@ -37,6 +37,8 @@ namespace SQLite
 
 		public string TableName { get; }
 
+		public int UserVersionAdded { get; }
+
 		public bool WithoutRowId { get; }
 
 		public Column[] Columns { get; }
@@ -56,7 +58,7 @@ namespace SQLite
 		public ManyToManyRelationship[] ManyToManys { get; }
 
 
-		public TableMapping(Type type, SQLiteConfig config)
+		public TableMapping(Type type, SQLiteConfig config, int? userVersionFilter = null)
 		{
 			CreateFlags createFlags = config.CreateFlags;
 			MappedType = type;
@@ -82,6 +84,11 @@ namespace SQLite
 				TableName = MappedType.Name;
 			}
 			WithoutRowId = tableAttr != null ? tableAttr.WithoutRowId : false;
+
+			var userVersion = type.GetCustomAttribute<UserVersionAttribute>();
+			if(userVersion != null) {
+				UserVersionAdded = userVersion.UserVersion;
+			}
 
 			var props = new List<PropertyInfo>();
 			var baseType = type;
@@ -110,7 +117,12 @@ namespace SQLite
 			foreach(var p in props) {
 				var isColumn = !p.IsDefined(typeof(IgnoreAttribute), true);
 				if(isColumn) {
-					cols.Add(new Column(p, config));
+					var col = new Column(p, config);
+					if (userVersionFilter.HasValue 
+						&& col.UserVersionAdded > userVersionFilter.Value) {
+						continue;
+					}
+					cols.Add(col);
 				}
 				else if(p.IsDefined(typeof(ManyToManyAttribute), true)) {
 					manyToManys.Add(new ManyToManyRelationship(p));
@@ -245,6 +257,8 @@ namespace SQLite
 
 			public string PropertyName => PropertyInfo.Name;
 
+			public int UserVersionAdded { get; }
+
 			public Type ClrType { get; }
 			public string SqlType { get; }
 
@@ -332,6 +346,10 @@ namespace SQLite
 				SetFunc = prop.GetSetterDelegate();
 				Name = colAttr?.Name ?? prop.Name;
 
+				var userVersion = prop.GetCustomAttribute<UserVersionAttribute>();
+				if (userVersion != null) {
+					UserVersionAdded = userVersion.UserVersion;
+				}
 				Collation = Orm.Collation(prop);
 				IsPK = Orm.IsPK(prop) ||
 					(((createFlags & CreateFlags.ImplicitPK) == CreateFlags.ImplicitPK) &&
@@ -459,8 +477,15 @@ namespace SQLite
 			}
 
 			if (attribute.OrderProperty != null) {
-				OrderColumn = Table.FindColumnWithPropertyName(attribute.OrderProperty)
-					?? throw new ArgumentException($"Relationship table doesn't have requested order column: {attribute.OrderProperty}");
+				OrderColumn = Table.FindColumnWithPropertyName(attribute.OrderProperty);
+				if (OrderColumn == null) {
+					UserVersionAttribute? orderAddedVersion =
+						Table.MappedType.GetProperty(attribute.OrderProperty)
+						.GetCustomAttribute<UserVersionAttribute>();
+					if(orderAddedVersion == null || orderAddedVersion.UserVersion <= config.UserVersion) {
+						throw new ArgumentException($"Relationship table doesn't have requested order column: {attribute.OrderProperty}");
+					}
+				}
 			}
 		}
 
