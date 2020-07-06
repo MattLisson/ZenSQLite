@@ -534,7 +534,7 @@ namespace SQLite
 				}
 				connection.Insert(newRow);
 			}
-			foreach(object? childId in existingIds) {
+			foreach(object? childId in existingIds.Keys) {
 				connection.Execute(
 				$@"DELETE FROM ""{Table.TableName}"" WHERE ""{ThisKeyColumn.Name}"" = ? AND ""{OtherKeyColumn.Name}"" = ?",
 				thisKey, childId);
